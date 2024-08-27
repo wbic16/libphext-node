@@ -1,0 +1,22 @@
+{
+  "name": "libphext",
+  "version": "0.1.7",
+  "description": "the fork of libphext for node",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wbic16/libphext-node.git"
+  },
+  "keywords": [
+    "phext"
+  ],
+  "author": "Will Bickford <wbic16@gmail.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/wbic16/libphext-node/issues"
+  },
+  "homepage": "https://github.com/wbic16/libphext-node#readme"
+}
