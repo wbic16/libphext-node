@@ -42,3 +42,50 @@ export class Phext {
 		console.log(`state: ${this.state}`);
 	};
 }
+class ZCoordinate {
+	constructor(library, shelf, series) {
+		this.library = library;
+		this.shelf = shelf;
+		this.series = series;
+	}
+}
+class YCoordinate {
+	constructor(collection, volume, book) {
+		this.collection = collection;
+		this.volume = volume;
+		this.book = book;
+	}
+}
+class XCoordinate {
+	constructor(chapter, section, scroll) {
+		this.chapter = chapter;
+		this.section = section;
+		this.scroll = scroll;
+	}
+}
+export class Coordinate {
+	constructor(value) {
+		this.z = new ZCoordinate('1', '1', '1');
+		this.y = new YCoordinate('1', '1', '1');
+		this.x = new XCoordinate('1', '1', '1');
+		var parts = value.replace(/\//g, '.').split('.');
+		if (parts.length >= 3)
+		{
+			this.z.library = parts[0];
+			this.z.shelf = parts[1];
+			this.z.series = parts[2];
+		}
+		if (parts.length >= 6)
+		{
+			this.y.collection = parts[3];
+			this.y.volume = parts[4];
+			this.y.book = parts[5];
+		}
+		if (parts.length >= 9)
+		{
+			this.x.chapter = parts[6];
+			this.x.section = parts[7];
+			this.x.scroll = parts[8];
+		}
+	}
+}
