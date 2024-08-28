@@ -28,3 +28,5 @@ verify('X.chapter', coord.x.chapter, '93');
 verify('X.section', coord.x.section, '92');
 verify('X.scroll', coord.x.scroll, '91');
 
+var stuff = phext.get_subspace_coordinates('test', '1.1.1/1.1.1/1.1.1');
+console.log('subspace_coordinates: ' + stuff.best);

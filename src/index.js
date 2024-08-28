@@ -41,6 +41,26 @@ export class Phext {
 		console.log(`Length: ${this.subspace.length}`);
 		console.log(`state: ${this.state}`);
 	};
+
+	get_subspace_coordinates = (subspace, target) => {
+		// stub - see lines 315-371 in phext.rs
+		return new OffsetsAndCoordinate(1, 1, target);
+	};
+
+	remove = (phext, location) => {
+		var phase1 = this.replace(phext, location, "");
+  		return this.normalize(phase1);
+	};
+
+	create_summary = (phext) => {
+		// stub - see lines 382-402 in phext.rs
+		return '';
+	};
+
+	navmap = (urlbase, phext) => {
+		// stub - see lines 407-420 in phext.rs
+		return '';
+	};
 }
 class ZCoordinate {
 	constructor(library, shelf, series) {
@@ -87,5 +107,12 @@ export class Coordinate {
 			this.x.section = parts[7];
 			this.x.scroll = parts[8];
 		}
+	}
+}
+class OffsetsAndCoordinate {
+	constructor(start, end, best) {
+		this.start = start;
+		this.end = end;
+		this.best = best;
 	}
 }
