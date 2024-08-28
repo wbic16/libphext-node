@@ -6,8 +6,8 @@
     "rebuild": "cd .. && npm run build && cd test-app && npm i ..",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Will Bickford <wbic16@gmail.com>",
+  "license": "MIT",
   "description": "",
   "dependencies": {
     "@libphext/core-js": "file:.."
