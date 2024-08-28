@@ -30,3 +30,24 @@ verify('X.scroll', coord.x.scroll, '91');
 
 var stuff = phext.get_subspace_coordinates('test', '1.1.1/1.1.1/1.1.1');
 console.log('subspace_coordinates: ' + stuff.best);
+
+assert_eq = (left, right, message) => {
+    if (left != right) { console.log(`Error: '${left}' != '${right}' -- ${message}`); }
+    else { console.log(`Passed: '${left}' == '${right}'`); }
+};
+class Tests {
+    constructor() {
+        this.test_coordinate_parsing();
+    };
+    test_coordinate_parsing = () => {
+        var example_coordinate = "9.8.7/6.5.4/3.2.1";
+        var test = phext.to_coordinate(example_coordinate);
+        var address = test.to_string();
+        assert_eq(address, example_coordinate, "Coordinate parsing failed");
+
+        let weird_coordinate = "HOME";
+        let test_weird = phext.to_coordinate(weird_coordinate).to_string();
+        assert_eq("1.1.1/1.1.1/1.1.1", test_weird, "Weird coordinate parsing failed");
+    };
+};
+var runall = new Tests();

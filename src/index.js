@@ -269,6 +269,41 @@ export class Phext {
 	};
 
 	to_coordinate = (address) => {
+		var result = new Coordinate();
+		var index = 0;
+		var value = 0;
+		var exp = 10;
+		for (var i = 0; i < address.length; ++i) {
+			var byte = address[i];
+
+			if (byte == this.ADDRESS_MICRO_BREAK ||
+				byte == this.ADDRESS_MACRO_BREAK ||
+				byte == this.ADDRESS_MACRO_ALT) {
+				switch (index) {
+				  case 1: result.z.library = parseInt(value); index += 1; break;
+				  case 2: result.z.shelf = parseInt(value); index += 1; break;
+				  case 3: result.z.series = parseInt(value); index += 1; break;
+				  case 4: result.y.collection = parseInt(value); index += 1; break;
+				  case 5: result.y.volume = parseInt(value); index += 1; break;
+				  case 6: result.y.book = parseInt(value); index += 1; break;
+				  case 7: result.x.chapter = parseInt(value); index += 1; break;
+				  case 8: result.x.section = parseInt(value); index += 1; break;
+				}
+				value = 0;
+			}
+
+			if (byte >= '0' && byte <= '9')
+			{
+				value = exp * value + parseInt(byte);
+				if (index == 0) { index = 1; }
+			}
+		}
+
+  		if (index > 0) {
+    		result.x.scroll = value;
+  		}
+
+  		return result;
 	};
 }
 class ZCoordinate {
@@ -297,6 +332,7 @@ export class Coordinate {
 		this.z = new ZCoordinate('1', '1', '1');
 		this.y = new YCoordinate('1', '1', '1');
 		this.x = new XCoordinate('1', '1', '1');
+		value = "" + value;
 		var parts = value.replace(/\//g, '.').split('.');
 		if (parts.length >= 3)
 		{
@@ -323,15 +359,15 @@ export class Coordinate {
   	};
 
 	validate_coordinate = () => {
-		let ok = validate_index(this.z.library) &&
-		validate_index(this.z.shelf) &&
-		validate_index(this.z.series) &&
-		validate_index(this.y.collection) &&
-		validate_index(this.y.volume) &&
-		validate_index(this.y.book) &&
-		validate_index(this.x.chapter) &&
-		validate_index(this.x.section) &&
-		validate_index(this.x.scroll);
+		let ok = this.validate_index(this.z.library) &&
+				 this.validate_index(this.z.shelf) &&
+			     this.validate_index(this.z.series) &&
+			     this.validate_index(this.y.collection) &&
+			     this.validate_index(this.y.volume) &&
+			     this.validate_index(this.y.book) &&
+			     this.validate_index(this.x.chapter) &&
+			     this.validate_index(this.x.section) &&
+			     this.validate_index(this.x.scroll);
 		return ok;
 	};
 
