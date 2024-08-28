@@ -1,11 +1,16 @@
 {
-  "name": "libphext",
+  "name": "@libphext/core-js",
   "version": "0.1.7",
   "description": "the fork of libphext for node",
-  "main": "index.js",
+  "source": "src/index.js",
+  "main": "dist/index.js",
+  "module": "dist/module.js",  
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+		"watch": "parcel watch",
+		"build": "parcel build",
+    "start-js": "node index.js",
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
   "repository": {
     "type": "git",
     "url": "git+https://github.com/wbic16/libphext-node.git"
@@ -18,5 +23,11 @@
   "bugs": {
     "url": "https://github.com/wbic16/libphext-node/issues"
   },
-  "homepage": "https://github.com/wbic16/libphext-node#readme"
+  "homepage": "https://github.com/wbic16/libphext-node#readme",
+  "dependencies": {
+    "parcel": "^2.12.0"
+  },
+  "devDependencies": {
+		"parcel": "2.8.3"
+	}
 }
