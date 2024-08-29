@@ -11,8 +11,6 @@ export class Phext {
 	constructor(subspace) {
 		this.subspace = subspace;
 		this.state = 'unparsed';
-		this.COORDINATE_MINIMUM  = 1;
-    	this.COORDINATE_MAXIMUM  = 100;
         this.LIBRARY_BREAK       = '\x01'; // 11D Break - replaces start of header
         this.MORE_COWBELL        = '\x07'; // i've got a fever, and the only prescription...is more cowbell!
         this.LINE_BREAK          = '\x0A'; // same as plain text \o/
@@ -332,6 +330,8 @@ export class Coordinate {
 		this.z = new ZCoordinate('1', '1', '1');
 		this.y = new YCoordinate('1', '1', '1');
 		this.x = new XCoordinate('1', '1', '1');
+		this.COORDINATE_MINIMUM  = 1;
+    	this.COORDINATE_MAXIMUM  = 100;
 		value = "" + value;
 		var parts = value.replace(/\//g, '.').split('.');
 		if (parts.length >= 3)
