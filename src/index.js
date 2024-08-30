@@ -7,10 +7,14 @@
 // This project was ported from https://github.com/wbic16/libphext-rs/blob/master/src/phext.rs.
 // Web Site: https://phext.io/
 // -----------------------------------------------------------------------------------------------------------
+var global_coordinate_minimum = 1;
+var global_coordinate_maximum = 100; // 100^9 x 2 KB is a lot of data :)
 export class Phext {
 	constructor(subspace) {
 		this.subspace = subspace;
 		this.state = 'unparsed';
+		this.COORDINATE_MINIMUM = global_coordinate_minimum;
+		this.COORDINATE_MAXIMUM = global_coordinate_maximum;
         this.LIBRARY_BREAK       = '\x01'; // 11D Break - replaces start of header
         this.MORE_COWBELL        = '\x07'; // i've got a fever, and the only prescription...is more cowbell!
         this.LINE_BREAK          = '\x0A'; // same as plain text \o/
@@ -41,8 +45,66 @@ export class Phext {
 	};
 
 	get_subspace_coordinates = (subspace, target) => {
-		// stub - see lines 315-371 in phext.rs
-		return new OffsetsAndCoordinate(1, 1, target);
+		var walker = new Coordinate();
+  		var best = new Coordinate();
+  		var subspace_index = 0;
+  		var start = 0;
+  		var end = 0;
+  		var stage = 0;
+  		var max = subspace.length;
+
+  		while (subspace_index < max) {
+    		var next = subspace[subspace_index];
+
+    		if (stage == 0) {
+      			if (walker.equals(target)) {
+        			stage = 1;
+        			start = subspace_index;
+        			best = walker;
+      			}
+      			if (walker.less_than(target)) {
+        			best = walker;
+      			}
+    		}
+
+    		if (stage < 2 && walker.greater_than(target)) {
+      			if (stage == 0) {
+        			start = subspace_index - 1;
+      			}
+      			end = subspace_index - 1;
+      			stage = 2;
+    		}
+
+    		if (this.is_phext_break(next)) {
+      			if (next == this.SCROLL_BREAK)     { walker.scroll_break();     }
+      			if (next == this.SECTION_BREAK)    { walker.section_break();    }
+      			if (next == this.CHAPTER_BREAK)    { walker.chapter_break();    }
+      			if (next == this.BOOK_BREAK)       { walker.book_break();       }
+      			if (next == this.VOLUME_BREAK)     { walker.volume_break();     }
+      			if (next == this.COLLECTION_BREAK) { walker.collection_break(); }
+      			if (next == this.SERIES_BREAK)     { walker.series_break();     }
+      			if (next == this.SHELF_BREAK)      { walker.shelf_break();      }
+      			if (next == this.LIBRARY_BREAK)    { walker.library_break();    }
+    		}
+
+    		++subspace_index;
+  		}
+
+  		if (stage == 1 && walker == target) {
+    		end = max;
+    		stage = 2;
+  		}
+
+  		if (stage == 0) {
+    		start = max;
+    		end = max;
+  		}
+
+		var result = new OffsetsAndCoordinate();
+		result.start = start;
+		result.end = end;
+		result.coord = best;
+		return result;
 	};
 
 	remove = (phext, location) => {
@@ -151,7 +213,7 @@ export class Phext {
 	offset = (phext, coord) => {
 		var output = index_phokens(phext);
 	  
-		var best = default_coordinate();
+		var best = new Coordinate();
 		var matched = false;
 		var fetch_coord = coord;
 		for (var i = 0; i < output.length; ++i) {
@@ -173,11 +235,11 @@ export class Phext {
 	};
 
 	replace = (phext, location, scroll) => {
-		var parts = get_subspace_coordinates(phext, location);
+		var parts = this.get_subspace_coordinates(phext, location);
 		var start = parts.start;
-		var end = parts.end;
-		var fixup = Array();
+		var end = parts.end;		
 		var subspace_coordinate = parts.coord;
+		var fixup = Array();
 	  
 		while (subspace_coordinate.z.library < location.z.library) {
 		  fixup += this.LIBRARY_BREAK;
@@ -241,6 +303,21 @@ export class Phext {
 	};
 
 	fetch = (phext, target) => {
+  		var parts = this.get_subspace_coordinates(phext, target);
+		console.log(`parts: ${parts.start}, ${parts.end}, ${parts.coord.to_string()}.`);
+		console.log(`phext: ${phext.length}`);
+  		var start = parts.start;
+  		var end = parts.end;
+
+  		if (end > start)
+  		{
+    		var glyphs = end - start;
+			var result = phext.substr(start, glyphs);
+			console.log(`return: '${result}'.`);
+			return result;
+  		}
+
+  		return "";
 	};
 
 	expand = (phext) => {
@@ -259,6 +336,16 @@ export class Phext {
 	};
 
 	is_phext_break = (byte) => {
+		return byte == this.LINE_BREAK ||
+				byte == this.SCROLL_BREAK ||
+				byte == this.SECTION_BREAK ||
+				byte == this.CHAPTER_BREAK ||
+				byte == this.BOOK_BREAK ||
+				byte == this.VOLUME_BREAK ||
+				byte == this.COLLECTION_BREAK ||
+				byte == this.SERIES_BREAK ||
+				byte == this.SHELF_BREAK ||
+				byte == this.LIBRARY_BREAK;
 	};
 
 	normalize = (phext) => {
@@ -330,8 +417,8 @@ export class Coordinate {
 		this.z = new ZCoordinate('1', '1', '1');
 		this.y = new YCoordinate('1', '1', '1');
 		this.x = new XCoordinate('1', '1', '1');
-		this.COORDINATE_MINIMUM  = 1;
-    	this.COORDINATE_MAXIMUM  = 100;
+		this.COORDINATE_MINIMUM  = global_coordinate_minimum;
+    	this.COORDINATE_MAXIMUM  = global_coordinate_maximum;
 		value = "" + value;
 		var parts = value.replace(/\//g, '.').split('.');
 		if (parts.length >= 3)
@@ -353,6 +440,42 @@ export class Coordinate {
 			this.x.scroll = parseInt(parts[8]);
 		}
 	}
+
+	equals = (other) => {
+		return this.z.library == other.z.library &&
+		       this.z.shelf == other.z.shelf &&
+			   this.z.series == other.z.series &&
+			   this.y.collection == other.y.collection &&
+			   this.y.volume == other.y.volume &&
+			   this.y.book == other.y.book &&
+			   this.x.chapter == other.x.chapter &&
+			   this.x.section == other.x.section &&
+			   this.x.scroll == other.x.scroll;
+	};
+
+	less_than = (other) => {
+		return this.z.library < other.z.library ||
+		       this.z.shelf < other.z.shelf ||
+			   this.z.series < other.z.series ||
+			   this.y.collection < other.y.collection ||
+			   this.y.volume < other.y.volume ||
+			   this.y.book < other.y.book ||
+			   this.x.chapter < other.x.chapter ||
+			   this.x.section < other.x.section ||
+			   this.x.scroll < other.x.scroll;
+	};
+
+	greater_than = (other) => {
+		return this.z.library > other.z.library &&
+		       this.z.shelf > other.z.shelf &&
+			   this.z.series > other.z.series &&
+			   this.y.collection > other.y.collection &&
+			   this.y.volume > other.y.volume &&
+			   this.y.book > other.y.book &&
+			   this.x.chapter > other.x.chapter &&
+			   this.x.section > other.x.section &&
+			   this.x.scroll > other.x.scroll;
+	};
 
 	validate_index = (index) => {
 		return index >= this.COORDINATE_MINIMUM && index <= this.COORDINATE_MAXIMUM;
@@ -385,7 +508,7 @@ export class Coordinate {
 
 	advance_coordinate = (index) => {
 		var next = index + 1;
-		if (next < COORDINATE_MAXIMUM) {
+		if (next < this.COORDINATE_MAXIMUM) {
 		  return next;
 		}
 	
@@ -393,49 +516,49 @@ export class Coordinate {
 	};
 
 	library_break = () => {
-		this.z.library = advance_coordinate(this.z.library);
+		this.z.library = this.advance_coordinate(this.z.library);
 		this.z.shelf = 1;
 		this.z.series = 1;
 		this.y = new YCoordinate();
 		this.x = new XCoordinate();
 	};
 	shelf_break = () => {
-		this.z.shelf = advance_coordinate(this.z.shelf);
+		this.z.shelf = this.advance_coordinate(this.z.shelf);
 		this.z.series = 1;
 		this.y = new YCoordinate();
 		this.x = new XCoordinate();
 	};
 	series_break = () => {
-		this.z.series = advance_coordinate(this.z.series);
+		this.z.series = this.advance_coordinate(this.z.series);
 		this.y = new YCoordinate();
 		this.x = new XCoordinate();
 	};
 	collection_break = () => {
-		this.y.collection = advance_coordinate(this.y.collection);
+		this.y.collection = this.advance_coordinate(this.y.collection);
 		this.y.volume = 1;
 		this.y.book = 1;
 		this.x = new XCoordinate();
 	};
 	volume_break = () => {
-		this.y.volume = advance_coordinate(this.y.volume);
+		this.y.volume = this.advance_coordinate(this.y.volume);
 		this.y.book = 1;
 		this.x = new XCoordinate();
 	};
 	book_break = () => {
-		this.y.book = advance_coordinate(this.y.book);
+		this.y.book = this.advance_coordinate(this.y.book);
 		this.x = new XCoordinate();
 	};
 	chapter_break = () => {
-		this.x.chapter = advance_coordinate(this.x.chapter);
+		this.x.chapter = this.advance_coordinate(this.x.chapter);
 		this.x.section = 1;
 		this.x.scroll = 1;
 	};
 	section_break = () => {
-		this.x.section = advance_coordinate(this.x.section);
+		this.x.section = this.advance_coordinate(this.x.section);
 		this.x.scroll = 1;
 	};
 	scroll_break = () => {
-		this.x.scroll = advance_coordinate(this.x.scroll);
+		this.x.scroll = this.advance_coordinate(this.x.scroll);
 	};
 }
 class OffsetsAndCoordinate {

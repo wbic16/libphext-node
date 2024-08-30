@@ -28,7 +28,7 @@ verify('X.chapter', coord.x.chapter, '93');
 verify('X.section', coord.x.section, '92');
 verify('X.scroll', coord.x.scroll, '91');
 
-var stuff = phext.get_subspace_coordinates('test', '1.1.1/1.1.1/1.1.1');
+var stuff = phext.get_subspace_coordinates('test', phext.to_coordinate('1.1.1/1.1.1/1.1.1'));
 console.log('subspace_coordinates: ' + stuff.best);
 
 const verbose = false;
@@ -78,7 +78,8 @@ class Tests {
         if (expected.length < 3 || addresses.length < 3) {
             return false;
         }
-        for (var index = 0; index < expected.length; ++index) {
+        console.log(`expected: ${expected[0]}, addresses: ${addresses[0]}`);
+        for (var index = 0; index < expected.length; index++) {
             if (index == 0) { expect1 = expected[index]; address1 = addresses[index]; }
             if (index == 1) { expect2 = expected[index]; address2 = addresses[index]; }
             if (index == 2) { expect3 = expected[index]; address3 = addresses[index]; }
@@ -90,13 +91,13 @@ class Tests {
         const coord3 = phext.to_coordinate(address3);
 
         const text1 = phext.fetch(sample, coord1);
-        assert_eq(text1, expect1, "Fetching text for coord1 failed");
+        assert_eq(text1, expect1, `Fetching text for coord1 failed - '${text1}' vs '${expect1}'`);
 
         const text2 = phext.fetch(sample, coord2);
-        assert_eq(text2, expect2, "Fetching text for coord2 failed");
+        assert_eq(text2, expect2, `Fetching text for coord2 failed - '${text2}' vs '${expect2}'`);
 
         const text3 = phext.fetch(sample, coord3);
-        assert_eq(text3, expect3, "Fetching text for coord3 failed");
+        assert_eq(text3, expect3, `Fetching text for coord3 failed - '${text3}' vs '${expect3}'`);
 
         return true;
     };
