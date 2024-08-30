@@ -86,18 +86,20 @@ class Tests {
         }
         const sample = `${expect1}${delim}${expect2}${delim}${expect3}`;
 
+        assert_eq("SA", sample.length, 89, "incorrect sample length");
+
         const coord1 = phext.to_coordinate(address1);
         const coord2 = phext.to_coordinate(address2);
         const coord3 = phext.to_coordinate(address3);
 
         const text1 = phext.fetch(sample, coord1);
-        assert_eq(text1, expect1, `Fetching text for coord1 failed - '${text1}' vs '${expect1}'`);
+        assert_eq("C1", text1, expect1, `Fetching text for coord1 failed - '${text1}' vs '${expect1}'`);
 
         const text2 = phext.fetch(sample, coord2);
-        assert_eq(text2, expect2, `Fetching text for coord2 failed - '${text2}' vs '${expect2}'`);
+        assert_eq("C2", text2, expect2, `Fetching text for coord2 failed - '${text2}' vs '${expect2}'`);
 
         const text3 = phext.fetch(sample, coord3);
-        assert_eq(text3, expect3, `Fetching text for coord3 failed - '${text3}' vs '${expect3}'`);
+        assert_eq("C3", text3, expect3, `Fetching text for coord3 failed - '${text3}' vs '${expect3}'`);
 
         return true;
     };
