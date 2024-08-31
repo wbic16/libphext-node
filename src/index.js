@@ -60,16 +60,19 @@ export class Phext {
       			if (walker.equals(target)) {
         			stage = 1;
         			start = subspace_index;
-        			best = walker;
+        			console.log(`a: ${best.to_string()} => ${walker.to_string()}`);
+					best = walker;					
       			}
       			if (walker.less_than(target)) {
-        			best = walker;
+        			console.log(`b: ${best.to_string()} => ${walker.to_string()}`);
+					best = walker;					
       			}
     		}
 
     		if (stage < 2 && walker.greater_than(target)) {
-      			if (stage == 0) {
+				if (stage == 0) {
         			start = subspace_index - 1;
+					best = walker;
       			}
       			end = subspace_index - 1;
       			stage = 2;
@@ -91,7 +94,7 @@ export class Phext {
   		}
 
   		if (stage == 1 && walker.equals(target)) {
-    		end = max;
+			end = max;
     		stage = 2;
   		}
 
@@ -287,7 +290,27 @@ export class Phext {
 	range_replace = (phext, location, scroll) => {
 	};
 
-	insert = (phext, location, scroll) => {
+	insert = (buffer, location, scroll) => {
+  		var parts = this.get_subspace_coordinates(buffer, location);
+  		const end = parts.end;
+  		var fixup = "";
+  		var subspace_coordinate = parts.coord;
+
+  		while (subspace_coordinate.z.library < location.z.library) { fixup += this.LIBRARY_BREAK; subspace_coordinate.library_break(); }
+  		while (subspace_coordinate.z.shelf < location.z.shelf) { fixup += this.SHELF_BREAK; subspace_coordinate.shelf_break(); }
+  		while (subspace_coordinate.z.series < location.z.series) { fixup += this.SERIES_BREAK; subspace_coordinate.series_break(); }
+  		while (subspace_coordinate.y.collection < location.y.collection) { fixup += this.COLLECTION_BREAK; subspace_coordinate.collection_break(); }
+  		while (subspace_coordinate.y.volume < location.y.volume) { fixup += this.VOLUME_BREAK; subspace_coordinate.volume_break(); }
+  		while (subspace_coordinate.y.book < location.y.book) { fixup += this.BOOK_BREAK; subspace_coordinate.book_break(); }
+  		while (subspace_coordinate.x.chapter < location.x.chapter) { fixup += this.CHAPTER_BREAK; subspace_coordinate.chapter_break(); }
+  		while (subspace_coordinate.x.section < location.x.section) { fixup += this.SECTION_BREAK; subspace_coordinate.section_break(); }
+		while (subspace_coordinate.x.scroll < location.x.scroll) { fixup += this.SCROLL_BREAK; subspace_coordinate.scroll_break(); }
+
+  		const left = buffer.substr(0, end);
+  		const right = buffer.substr(end);
+		console.log(`end: ${end}, parts: ${parts.coord.to_string()}, location: ${location.to_string()}`);
+		const result = left + fixup + scroll + right;
+		return result;
 	};
 
 	next_scroll = (phext, start) => {
@@ -443,15 +466,25 @@ export class Coordinate {
 	};
 
 	greater_than = (other) => {
-		return this.z.library > other.z.library &&
-		       this.z.shelf > other.z.shelf &&
-			   this.z.series > other.z.series &&
-			   this.y.collection > other.y.collection &&
-			   this.y.volume > other.y.volume &&
-			   this.y.book > other.y.book &&
-			   this.x.chapter > other.x.chapter &&
-			   this.x.section > other.x.section &&
-			   this.x.scroll > other.x.scroll;
+		if (this.z.library > other.z.library) { return true; }
+		if (this.z.library < other.z.library) { return false; }
+		if (this.z.shelf > other.z.shelf) { return true; }
+		if (this.z.shelf < other.z.shelf) { return false; }
+		if (this.z.series > other.z.series) { return true; }
+		if (this.z.series < other.z.series) { return false; }
+		if (this.y.collection > other.y.collection) { return true; }
+		if (this.y.collection < other.y.collection) { return false; }
+		if (this.y.volume > other.y.volume) { return true; }
+		if (this.y.volume < other.y.volume) { return false; }
+		if (this.y.book > other.y.book) { return true; }
+		if (this.y.book < other.y.book) { return false; }
+		if (this.x.chapter > other.x.chapter) { return true; }
+		if (this.x.chapter < other.x.chapter) { return false; }
+		if (this.x.section > other.x.section) { return true; }
+		if (this.x.section < other.x.section) { return false; }
+		if (this.x.scroll > other.x.scroll) { return true; }
+		if (this.x.scroll < other.x.scroll) { return false; }
+		return false;
 	};
 
 	validate_index = (index) => {

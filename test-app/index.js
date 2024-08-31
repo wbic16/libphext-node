@@ -163,6 +163,7 @@ class Tests {
         const coord6 = phext.to_coordinate("2.1.1/1.1.1/1.1.5");
         const update6 = phext.insert(update5, coord6, "iii");
         assert_eq("CBI17", update6, "aaa\x01bbb\x17ccc\x17ddd\x17eee\x17iii\x18fff\x17ggg\x19hhh", "insert 'iii'");
+        wtf1();
 
         // extend 1.1.1/1.1.1/1.1.1 with '---AAA'
         const update7 = phext.insert(update6, root, "---AAA");
