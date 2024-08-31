@@ -1,6 +1,5 @@
 const { Phext, Coordinate } = require("@libphext/core-js");
 const phext = new Phext("hello world");
-phext.parse();
 phext.status();
 function verify(test_name, constant, value) {
     console.log(`${test_name}: ${constant == value ? 'OK' : 'Failed'}`);
@@ -29,7 +28,7 @@ verify('X.section', coord.x.section, '92');
 verify('X.scroll', coord.x.scroll, '91');
 
 var stuff = phext.get_subspace_coordinates('test', phext.to_coordinate('1.1.1/1.1.1/1.1.1'));
-console.log('subspace_coordinates: ' + stuff.best);
+console.log('subspace_coordinates: ' + stuff.coord.to_string());
 
 const verbose = false;
 var passed = 0;
@@ -117,7 +116,7 @@ class Tests {
 
         // append 'ddd' after 'ccc'
         const root = phext.to_coordinate("1.1.1/1.1.1/1.1.1");
-        const coord1 = phext.to_coordinate("2.1.1/1.1.1/1.1.3");        
+        const coord1 = phext.to_coordinate("2.1.1/1.1.1/1.1.3");
         const expected1 = phext.get_subspace_coordinates(test, coord1);
         assert_eq("CBI1", expected1.coord.z.library, 2, "LB");
         assert_eq("CBI2", expected1.coord.z.shelf, 1, "SF");
@@ -159,11 +158,35 @@ class Tests {
         const update5 = phext.insert(update4, coord5, "hhh");
         assert_eq("CBI16", update5, "aaa\x01bbb\x17ccc\x17ddd\x17eee\x18fff\x17ggg\x19hhh", "append 'hhh'");
 
+        // double-check progress so far
+        const u5a = phext.fetch(update5, phext.to_coordinate("1.1.1/1.1.1/1.1.1")); // aaa
+        const u5b = phext.fetch(update5, phext.to_coordinate("2.1.1/1.1.1/1.1.1")); // bbb
+        const u5c = phext.fetch(update5, phext.to_coordinate("2.1.1/1.1.1/1.1.2")); // ccc
+        const u5d = phext.fetch(update5, phext.to_coordinate("2.1.1/1.1.1/1.1.3")); // ddd
+        const u5e = phext.fetch(update5, phext.to_coordinate("2.1.1/1.1.1/1.1.4")); // eee
+        const u5f = phext.fetch(update5, phext.to_coordinate("2.1.1/1.1.1/1.2.1")); // fff
+        const u5g = phext.fetch(update5, phext.to_coordinate("2.1.1/1.1.1/1.2.2")); // ggg
+        const u5h = phext.fetch(update5, phext.to_coordinate("2.1.1/1.1.1/2.1.1")); // hhh
+        assert_eq("CBI16-1", u5a, "aaa", "fetch check aaa");
+        assert_eq("CBI16-2", u5b, "bbb", "fetch check bbb");
+        assert_eq("CBI16-3", u5c, "ccc", "fetch check ccc");
+        assert_eq("CBI16-4", u5d, "ddd", "fetch check ddd");
+        assert_eq("CBI16-5", u5e, "eee", "fetch check eee");
+        assert_eq("CBI16-6", u5f, "fff", "fetch check fff");
+        assert_eq("CBI16-7", u5g, "ggg", "fetch check ggg");
+        assert_eq("CBI16-8", u5h, "hhh", "fetch check hhh");
+
+        const u5coord1 = phext.to_coordinate("2.1.1/1.1.1/1.1.4");
+        const u5coord2 = phext.to_coordinate("2.1.1/1.1.1/1.2.1");
+        const check1 = u5coord1.less_than(u5coord2);
+        const check2 = u5coord2.less_than(u5coord1);
+        assert_eq("CBI16-9", check1, true, "2.1.1/1.1.1/1.1.4 is less than 2.1.1/1.1.1/1.2.1");
+        assert_eq("CBI16-10", check2, false, "2.1.1/1.1.1/1.2.1 is not less than 2.1.1/1.1.1/1.1.4");
+
         // append 'iii' after 'eee'
         const coord6 = phext.to_coordinate("2.1.1/1.1.1/1.1.5");
         const update6 = phext.insert(update5, coord6, "iii");
         assert_eq("CBI17", update6, "aaa\x01bbb\x17ccc\x17ddd\x17eee\x17iii\x18fff\x17ggg\x19hhh", "insert 'iii'");
-        wtf1();
 
         // extend 1.1.1/1.1.1/1.1.1 with '---AAA'
         const update7 = phext.insert(update6, root, "---AAA");

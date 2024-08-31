@@ -4,7 +4,7 @@
   "description": "the fork of libphext for node",
   "source": "src/index.js",
   "main": "dist/index.js",
-  "module": "dist/module.js",  
+  "module": "dist/module.js",
   "scripts": {
 		"watch": "parcel watch",
 		"build": "parcel build",

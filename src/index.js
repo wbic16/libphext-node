@@ -30,15 +30,6 @@ export class Phext {
         this.ADDRESS_MACRO_BREAK = '/'; // delimiter for macro-coordinates
         this.ADDRESS_MACRO_ALT   = ';';   // also allow ';' for url encoding
 	}
-	parse = () => {
-		console.log("Parsing phext!");
-		if (this.subspace.length > 0) {
-			console.log(`parsing ${this.subspace.length} bytes`);
-			this.state = 'parsing';
-		} else {
-			console.log("Nothing to parse.");
-		}
-	};
 	status = () => {
 		console.log(`Length: ${this.subspace.length}`);
 		console.log(`state: ${this.state}`);
@@ -46,7 +37,8 @@ export class Phext {
 
 	get_subspace_coordinates = (subspace, target) => {
 		var walker = new Coordinate();
-  		var best = new Coordinate();
+  		var fallback = new Coordinate();
+		var insertion = new Coordinate();
   		var subspace_index = 0;
   		var start = 0;
   		var end = 0;
@@ -60,21 +52,21 @@ export class Phext {
       			if (walker.equals(target)) {
         			stage = 1;
         			start = subspace_index;
-        			console.log(`a: ${best.to_string()} => ${walker.to_string()}`);
-					best = walker;					
+					fallback = this.to_coordinate(walker.to_string());
+					insertion = this.to_coordinate(walker.to_string());
       			}
       			if (walker.less_than(target)) {
-        			console.log(`b: ${best.to_string()} => ${walker.to_string()}`);
-					best = walker;					
+					fallback = this.to_coordinate(walker.to_string());
+					insertion = this.to_coordinate(walker.to_string());
       			}
     		}
 
     		if (stage < 2 && walker.greater_than(target)) {
 				if (stage == 0) {
         			start = subspace_index - 1;
-					best = walker;
       			}
-      			end = subspace_index - 1;
+				end = subspace_index - 1;
+				insertion = fallback;
       			stage = 2;
     		}
 
@@ -94,16 +86,20 @@ export class Phext {
   		}
 
   		if (stage == 1 && walker.equals(target)) {
+			//console.log(`end2: ${end} => ${max} (${insertion.to_string()})`);
 			end = max;
+			insertion = walker;
     		stage = 2;
   		}
 
   		if (stage == 0) {
     		start = max;
+			//console.log(`end3: ${end} => ${max} (${insertion.to_string()})`);
     		end = max;
+			insertion = walker;
   		}
 
-		var result = new OffsetsAndCoordinate(start, end, best);
+		var result = new OffsetsAndCoordinate(start, end, insertion, fallback);
 		return result;
 	};
 
@@ -144,7 +140,7 @@ export class Phext {
 		  phokens[i].scroll = checksum(phokens[i].scroll);
 		  ++i;
 		}
-	  
+
 		return dephokenize(phokens);
 	};
 
@@ -155,7 +151,7 @@ export class Phext {
 		var letter4 = "l";
 		var letter5 = "mn";
 		var letter6 = "r";
-	  
+
 		var value = 1; // 1-100
 		for (var i = 0; i < buffer.length; ++i) {
 		  var c = buffer[i];
@@ -166,17 +162,17 @@ export class Phext {
 		  if (letter5.contains(c)) { value += 5; continue; }
 		  if (letter6.contains(c)) { value += 6; continue; }
 		}
-	  
+
 		return value % 99;
 	};
 
 	soundex_v1 = (phext) => {
 		var phokens = phokenize(phext);
-		
+
 		for (var i = 0; i < phokens.length; ++i) {
 		  phokens[i].scroll = soundex_internal(phokens[i].scroll);
 		}
-	  
+
 		return dephokenize(phokens);
 	};
 
@@ -196,23 +192,23 @@ export class Phext {
 		  while (coord.x.chapter < reference.x.chapter) { coord.chapter_break(); offset += 1; }
 		  while (coord.x.section < reference.x.section) { coord.section_break(); offset += 1; }
 		  while (coord.x.scroll < reference.x.scroll) { coord.scroll_break(); offset += 1; }
-		  
+
 		  output[i] = new PositionedScroll(coord, offset);
 		  offset += phokens[i].scroll.length;
 		  ++i;
 		}
-	  
+
 		return output;
 	};
 
 	index = (phext) => {
-		var output = index_phokens(phext);	  
+		var output = index_phokens(phext);
 		return dephokenize(output);
 	};
 
 	offset = (phext, coord) => {
 		var output = index_phokens(phext);
-	  
+
 		var best = new Coordinate();
 		var matched = false;
 		var fetch_coord = coord;
@@ -225,22 +221,22 @@ export class Phext {
 				matched = true;
 		  	}
 		}
-	  
+
 		if (matched == false) {
 		  fetch_coord = best;
 		}
 		let index = this.dephokenize(output);
-		
+
 		return parseInt(this.fetch(index, fetch_coord));
 	};
 
 	replace = (phext, location, scroll) => {
 		var parts = this.get_subspace_coordinates(phext, location);
 		var start = parts.start;
-		var end = parts.end;		
+		var end = parts.end;
 		var subspace_coordinate = parts.coord;
 		var fixup = Array();
-	  
+
 		while (subspace_coordinate.z.library < location.z.library) {
 		  fixup += this.LIBRARY_BREAK;
 		  subspace_coordinate.library_break();
@@ -308,7 +304,7 @@ export class Phext {
 
   		const left = buffer.substr(0, end);
   		const right = buffer.substr(end);
-		console.log(`end: ${end}, parts: ${parts.coord.to_string()}, location: ${location.to_string()}`);
+		//console.log(`end: ${end}, parts: ${parts.coord.to_string()}, subspace: ${subspace_coordinate.to_string()}, location: ${location.to_string()}`);
 		const result = left + fixup + scroll + right;
 		return result;
 	};
@@ -324,8 +320,8 @@ export class Phext {
 
 	fetch = (phext, target) => {
   		var parts = this.get_subspace_coordinates(phext, target);
-		console.log(`parts: ${parts.start}, ${parts.end}, ${parts.coord.to_string()}.`);
-		console.log(`phext: ${phext.length}`);
+		//console.log(`parts: ${parts.start}, ${parts.end}, ${parts.coord.to_string()}.`);
+		//console.log(`phext: ${phext.length}`);
   		var start = parts.start;
   		var end = parts.end;
 
@@ -333,7 +329,7 @@ export class Phext {
   		{
     		var glyphs = end - start;
 			var result = phext.substr(start, glyphs);
-			console.log(`return: '${result}'.`);
+			//console.log(`return: '${result}'.`);
 			return result;
   		}
 
@@ -421,24 +417,15 @@ export class Coordinate {
     	this.COORDINATE_MAXIMUM = global_coordinate_maximum;
 		value = "" + value;
 		var parts = value.replace(/\//g, '.').split('.');
-		if (parts.length >= 3)
-		{
-			this.z.library = parseInt(parts[0]);
-			this.z.shelf = parseInt(parts[1]);
-			this.z.series = parseInt(parts[2]);
-		}
-		if (parts.length >= 6)
-		{
-			this.y.collection = parseInt(parts[3]);
-			this.y.volume = parseInt(parts[4]);
-			this.y.book = parseInt(parts[5]);
-		}
-		if (parts.length >= 9)
-		{
-			this.x.chapter = parseInt(parts[6]);
-			this.x.section = parseInt(parts[7]);
-			this.x.scroll = parseInt(parts[8]);
-		}
+		if (parts.length >= 1) { this.z.library = parseInt(parts[0]); if (isNaN(this.z.library)) { this.z.library = 1; }}
+		if (parts.length >= 2) { this.z.shelf = parseInt(parts[1]); if (isNaN(this.z.shelf)) { this.z.shelf = 1; }}
+		if (parts.length >= 3) { this.z.series = parseInt(parts[2]); if (isNaN(this.z.series)) { this.z.series = 1; }}
+		if (parts.length >= 4) { this.y.collection = parseInt(parts[3]); if (isNaN(this.y.collection)) { this.z.collection = 1; }}
+		if (parts.length >= 5) { this.y.volume = parseInt(parts[4]); if (isNaN(this.y.volume)) { this.y.volume = 1; }}
+		if (parts.length >= 6) { this.y.book = parseInt(parts[5]); if (isNaN(this.y.book)) { this.y.book = 1; }}
+		if (parts.length >= 7) { this.x.chapter = parseInt(parts[6]); if (isNaN(this.x.chapter)) { this.x.chapter = 1; }}
+		if (parts.length >= 8) { this.x.section = parseInt(parts[7]); if (isNaN(this.x.section)) { this.x.section = 1; }}
+		if (parts.length >= 9) { this.x.scroll = parseInt(parts[8]); if (isNaN(this.x.scroll)) { this.x.scroll = 1; }}
 	}
 
 	equals = (other) => {
@@ -454,15 +441,24 @@ export class Coordinate {
 	};
 
 	less_than = (other) => {
-		return this.z.library < other.z.library ||
-		       this.z.shelf < other.z.shelf ||
-			   this.z.series < other.z.series ||
-			   this.y.collection < other.y.collection ||
-			   this.y.volume < other.y.volume ||
-			   this.y.book < other.y.book ||
-			   this.x.chapter < other.x.chapter ||
-			   this.x.section < other.x.section ||
-			   this.x.scroll < other.x.scroll;
+		if (this.z.library < other.z.library) { return true; }
+		if (this.z.library > other.z.library) { return false; }
+		if (this.z.shelf < other.z.shelf) { return true; }
+		if (this.z.shelf > other.z.shelf) { return false; }
+		if (this.z.series < other.z.series) { return true; }
+		if (this.z.series > other.z.series) { return false; }
+		if (this.y.collection < other.y.collection) { return true; }
+		if (this.y.collection > other.y.collection) { return false; }
+		if (this.y.volume < other.y.volume) { return true; }
+		if (this.y.volume > other.y.volume) { return false; }
+		if (this.y.book < other.y.book) { return true; }
+		if (this.y.book > other.y.book) { return false; }
+		if (this.x.chapter < other.x.chapter) { return true; }
+		if (this.x.chapter > other.x.chapter) { return false; }
+		if (this.x.section < other.x.section) { return true; }
+		if (this.x.section > other.x.section) { return false; }
+		if (this.x.scroll < other.x.scroll) { return true; }
+		return false;
 	};
 
 	greater_than = (other) => {
@@ -483,7 +479,6 @@ export class Coordinate {
 		if (this.x.section > other.x.section) { return true; }
 		if (this.x.section < other.x.section) { return false; }
 		if (this.x.scroll > other.x.scroll) { return true; }
-		if (this.x.scroll < other.x.scroll) { return false; }
 		return false;
 	};
 
@@ -517,7 +512,7 @@ export class Coordinate {
 		if (next < this.COORDINATE_MAXIMUM) {
 		  return next;
 		}
-	
+
 		return index;
 	};
 
@@ -571,10 +566,11 @@ export class Coordinate {
 // internal classes
 
 class OffsetsAndCoordinate {
-	constructor(start, end, coord) {
+	constructor(start, end, coord, fallback) {
 		this.start = start;
 		this.end = end;
 		this.coord = coord;
+		this.fallback = fallback;
 	}
 }
 
