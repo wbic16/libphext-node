@@ -117,7 +117,7 @@ class Tests {
 
         // append 'ddd' after 'ccc'
         const root = phext.to_coordinate("1.1.1/1.1.1/1.1.1");
-        const coord1 = phext.to_coordinate("2.1.1/1.1.1/1.1.3");
+        const coord1 = phext.to_coordinate("2.1.1/1.1.1/1.1.3");        
         const expected1 = phext.get_subspace_coordinates(test, coord1);
         assert_eq("CBI1", expected1.coord.z.library, 2, "LB");
         assert_eq("CBI2", expected1.coord.z.shelf, 1, "SF");
@@ -134,7 +134,7 @@ class Tests {
         var expected_coord = new Coordinate();
         expected_coord.z.library = 2;
         expected_coord.x.scroll = 3;
-        assert_eq(coord1, expected_coord);
+        assert_eq("CBI11B", coord1.to_string(), expected_coord.to_string(), "coord 2.1.1/1.1.1/1.1.3");
 
         const update1 = phext.insert(test, coord1, "ddd");
         assert_eq("CBI12", update1, "aaa\x01bbb\x17ccc\x17ddd", "append 'ddd'");

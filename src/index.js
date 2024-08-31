@@ -100,10 +100,7 @@ export class Phext {
     		end = max;
   		}
 
-		var result = new OffsetsAndCoordinate();
-		result.start = start;
-		result.end = end;
-		result.coord = best;
+		var result = new OffsetsAndCoordinate(start, end, best);
 		return result;
 	};
 
@@ -391,34 +388,14 @@ export class Phext {
   		return result;
 	};
 }
-class ZCoordinate {
-	constructor(library, shelf, series) {
-		this.library = parseInt(library);
-		this.shelf = parseInt(shelf);
-		this.series = parseInt(series);
-	}
-}
-class YCoordinate {
-	constructor(collection, volume, book) {
-		this.collection = parseInt(collection);
-		this.volume = parseInt(volume);
-		this.book = parseInt(book);
-	}
-}
-class XCoordinate {
-	constructor(chapter, section, scroll) {
-		this.chapter = parseInt(chapter);
-		this.section = parseInt(section);
-		this.scroll = parseInt(scroll);
-	}
-}
+
 export class Coordinate {
 	constructor(value) {
 		this.z = new ZCoordinate(1,1,1);
 		this.y = new YCoordinate(1,1,1);
 		this.x = new XCoordinate(1,1,1);
-		this.COORDINATE_MINIMUM  = global_coordinate_minimum;
-    	this.COORDINATE_MAXIMUM  = global_coordinate_maximum;
+		this.COORDINATE_MINIMUM = global_coordinate_minimum;
+    	this.COORDINATE_MAXIMUM = global_coordinate_maximum;
 		value = "" + value;
 		var parts = value.replace(/\//g, '.').split('.');
 		if (parts.length >= 3)
@@ -495,10 +472,6 @@ export class Coordinate {
 	};
 
 	to_string = () => {
-		if (!this.validate_coordinate()) {
-		  return "";
-		}
-
 		return `${this.z.library}.${this.z.shelf}.${this.z.series}/${this.y.collection}.${this.y.volume}.${this.y.book}/${this.x.chapter}.${this.x.section}.${this.x.scroll}`;
 	};
 
@@ -561,10 +534,37 @@ export class Coordinate {
 		this.x.scroll = this.advance_coordinate(this.x.scroll);
 	};
 }
+
+// internal classes
+
 class OffsetsAndCoordinate {
-	constructor(start, end, best) {
+	constructor(start, end, coord) {
 		this.start = start;
 		this.end = end;
-		this.best = best;
+		this.coord = coord;
+	}
+}
+
+class ZCoordinate {
+	constructor(library, shelf, series) {
+		this.library = library ? parseInt(library) : 1;
+		this.shelf = shelf ? parseInt(shelf) : 1;
+		this.series = series ? parseInt(series) : 1;
+	}
+}
+
+class YCoordinate {
+	constructor(collection, volume, book) {
+		this.collection = collection ? parseInt(collection) : 1;
+		this.volume = volume ? parseInt(volume) : 1;
+		this.book = book ? parseInt(book) : 1;
+	}
+}
+
+class XCoordinate {
+	constructor(chapter, section, scroll) {
+		this.chapter = chapter ? parseInt(chapter) : 1;
+		this.section = section ? parseInt(section) : 1;
+		this.scroll = scroll ? parseInt(scroll) : 1;
 	}
 }
