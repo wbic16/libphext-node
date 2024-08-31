@@ -90,7 +90,7 @@ export class Phext {
     		++subspace_index;
   		}
 
-  		if (stage == 1 && walker == target) {
+  		if (stage == 1 && walker.equals(target)) {
     		end = max;
     		stage = 2;
   		}
@@ -414,9 +414,9 @@ class XCoordinate {
 }
 export class Coordinate {
 	constructor(value) {
-		this.z = new ZCoordinate('1', '1', '1');
-		this.y = new YCoordinate('1', '1', '1');
-		this.x = new XCoordinate('1', '1', '1');
+		this.z = new ZCoordinate(1,1,1);
+		this.y = new YCoordinate(1,1,1);
+		this.x = new XCoordinate(1,1,1);
 		this.COORDINATE_MINIMUM  = global_coordinate_minimum;
     	this.COORDINATE_MAXIMUM  = global_coordinate_maximum;
 		value = "" + value;
