@@ -7,14 +7,12 @@
 // This project was ported from https://github.com/wbic16/libphext-rs/blob/master/src/phext.rs.
 // Web Site: https://phext.io/
 // -----------------------------------------------------------------------------------------------------------
-var global_coordinate_minimum = 1;
-var global_coordinate_maximum = 100; // 100^9 x 2 KB is a lot of data :)
 export class Phext {
 	constructor(subspace) {
 		this.subspace = subspace;
 		this.state = 'unparsed';
-		this.COORDINATE_MINIMUM = global_coordinate_minimum;
-		this.COORDINATE_MAXIMUM = global_coordinate_maximum;
+		this.COORDINATE_MINIMUM = 1;
+		this.COORDINATE_MAXIMUM = 100;
         this.LIBRARY_BREAK       = '\x01'; // 11D Break - replaces start of header
         this.MORE_COWBELL        = '\x07'; // i've got a fever, and the only prescription...is more cowbell!
         this.LINE_BREAK          = '\x0A'; // same as plain text \o/
@@ -135,13 +133,13 @@ export class Phext {
 	};
 
 	manifest = (phext) => {
-		var phokens = phokenize(phext);
+		var phokens = this.phokenize(phext);
 		for (var i = 0; i < phokens.length; ++i) {
 		  phokens[i].scroll = checksum(phokens[i].scroll);
 		  ++i;
 		}
 
-		return dephokenize(phokens);
+		return this.dephokenize(phokens);
 	};
 
 	soundex_internal = (buffer) => {
@@ -167,13 +165,13 @@ export class Phext {
 	};
 
 	soundex_v1 = (phext) => {
-		var phokens = phokenize(phext);
+		var phokens = this.phokenize(phext);
 
 		for (var i = 0; i < phokens.length; ++i) {
 		  phokens[i].scroll = soundex_internal(phokens[i].scroll);
 		}
 
-		return dephokenize(phokens);
+		return this.dephokenize(phokens);
 	};
 
 	index_phokens = (phext) => {
@@ -203,7 +201,7 @@ export class Phext {
 
 	index = (phext) => {
 		var output = index_phokens(phext);
-		return dephokenize(output);
+		return this.dephokenize(output);
 	};
 
 	offset = (phext, coord) => {
@@ -237,43 +235,7 @@ export class Phext {
 		var subspace_coordinate = parts.coord;
 		var fixup = Array();
 
-		while (subspace_coordinate.z.library < location.z.library) {
-		  fixup += this.LIBRARY_BREAK;
-		  subspace_coordinate.library_break();
-		}
-		while (subspace_coordinate.z.shelf < location.z.shelf) {
-		  fixup += this.SHELF_BREAK;
-		  subspace_coordinate.shelf_break();
-		}
-		while (subspace_coordinate.z.series < location.z.series) {
-		  fixup += this.SERIES_BREAK;
-		  subspace_coordinate.series_break();
-		}
-		while (subspace_coordinate.y.collection < location.y.collection) {
-		  fixup += this.COLLECTION_BREAK;
-		  subspace_coordinate.collection_break();
-		}
-		while (subspace_coordinate.y.volume < location.y.volume) {
-		  fixup.push += this.VOLUME_BREAK;
-		  subspace_coordinate.volume_break();
-		}
-		while (subspace_coordinate.y.book < location.y.book) {
-		  fixup += this.BOOK_BREAK;
-		  subspace_coordinate.book_break();
-		}
-		while (subspace_coordinate.x.chapter < location.x.chapter) {
-		  fixup += this.CHAPTER_BREAK;
-		  subspace_coordinate.chapter_break();
-		}
-		while (subspace_coordinate.x.section < location.x.section) {
-		  fixup += this.SECTION_BREAK;
-		  subspace_coordinate.section_break();
-		}
-		while (subspace_coordinate.x.scroll < location.x.scroll) {
-		  fixup += SCROLL_BREAK;
-		  subspace_coordinate.scroll_break();
-		}
-
+		fixup += subspace_coordinate.advance_to(location);
 		var text = scroll;
 		var max = scroll.length;
 		if (end > max) { end = max; }
@@ -292,15 +254,7 @@ export class Phext {
   		var fixup = "";
   		var subspace_coordinate = parts.coord;
 
-  		while (subspace_coordinate.z.library < location.z.library) { fixup += this.LIBRARY_BREAK; subspace_coordinate.library_break(); }
-  		while (subspace_coordinate.z.shelf < location.z.shelf) { fixup += this.SHELF_BREAK; subspace_coordinate.shelf_break(); }
-  		while (subspace_coordinate.z.series < location.z.series) { fixup += this.SERIES_BREAK; subspace_coordinate.series_break(); }
-  		while (subspace_coordinate.y.collection < location.y.collection) { fixup += this.COLLECTION_BREAK; subspace_coordinate.collection_break(); }
-  		while (subspace_coordinate.y.volume < location.y.volume) { fixup += this.VOLUME_BREAK; subspace_coordinate.volume_break(); }
-  		while (subspace_coordinate.y.book < location.y.book) { fixup += this.BOOK_BREAK; subspace_coordinate.book_break(); }
-  		while (subspace_coordinate.x.chapter < location.x.chapter) { fixup += this.CHAPTER_BREAK; subspace_coordinate.chapter_break(); }
-  		while (subspace_coordinate.x.section < location.x.section) { fixup += this.SECTION_BREAK; subspace_coordinate.section_break(); }
-		while (subspace_coordinate.x.scroll < location.x.scroll) { fixup += this.SCROLL_BREAK; subspace_coordinate.scroll_break(); }
+		fixup += subspace_coordinate.advance_to(location);
 
   		const left = buffer.substr(0, end);
   		const right = buffer.substr(end);
@@ -310,9 +264,63 @@ export class Phext {
 	};
 
 	next_scroll = (phext, start) => {
+		var location = start;
+  		var output = "";
+  		var remaining = "";
+		var pi = 0;
+		var begin = start;
+  		var pmax = phext.length;
+  		while (pi < pmax) {
+    		var test = phext[pi];
+    		var dimension_break = false;
+    		if (test == this.SCROLL_BREAK)     { location.scroll_break();     dimension_break = true; }
+    		if (test == this.SECTION_BREAK)    { location.section_break();    dimension_break = true; }
+    		if (test == this.CHAPTER_BREAK)    { location.chapter_break();    dimension_break = true; }
+    		if (test == this.BOOK_BREAK)       { location.book_break();       dimension_break = true; }
+    		if (test == this.VOLUME_BREAK)     { location.volume_break();     dimension_break = true; }
+    		if (test == this.COLLECTION_BREAK) { location.collection_break(); dimension_break = true; }
+    		if (test == this.SERIES_BREAK)     { location.series_break();     dimension_break = true; }
+    		if (test == this.SHELF_BREAK)      { location.shelf_break();      dimension_break = true; }
+    		if (test == this.LIBRARY_BREAK)    { location.library_break();    dimension_break = true; }
+
+    		if (dimension_break) {
+      			if (output.length > 0) {
+        			pi += 1;
+        			break;
+      			}
+    		} else {      
+      			begin = location;
+      			output += phext[pi];
+    		}
+    		++pi;
+  		}
+
+		if (pi < pmax) {
+			remaining = phext.substr(pi);
+		}
+
+  		const out_scroll = new PositionedScroll(begin, output, location, remaining);
+  		return out_scroll;
 	};
 
 	phokenize = (phext) => {
+		const result = new Array();
+  		var coord = new Coordinate();
+		var done = false;
+		
+		var temp = phext;
+		while (!done) {
+			var ith_result = this.next_scroll(temp, coord);
+			if (ith_result.scroll.length == 0)
+			{
+				break;
+			}
+			result += ith_result.scroll;
+			coord = ith_result.location;
+			temp = ith_result.remaining;
+		}
+
+  		return result;
 	};
 
 	merge = (left, right) => {
@@ -343,6 +351,17 @@ export class Phext {
 	};
 
 	dephokenize = (tokens) => {
+		var result = "";
+  		var coord = new Coordinate();
+		for (var i = 0; i < tokens.length; ++i)
+		{
+			var ps = tokens[i];
+			if (ps.scroll.length > 0) {								
+				result += coord.advance_to(ps.coord);
+				result += ps.scroll;
+			}
+		}
+  		return result;
 	};
 
 	append_scroll = (token, coord) => {
@@ -365,8 +384,8 @@ export class Phext {
 	};
 
 	normalize = (phext) => {
-		var arr = phokenize(phext);
-		return dephokenize(arr);
+		var arr = this.phokenize(phext);
+		return this.dephokenize(arr);
 	};
 
 	to_coordinate = (address) => {
@@ -413,8 +432,6 @@ export class Coordinate {
 		this.z = new ZCoordinate(1,1,1);
 		this.y = new YCoordinate(1,1,1);
 		this.x = new XCoordinate(1,1,1);
-		this.COORDINATE_MINIMUM = global_coordinate_minimum;
-    	this.COORDINATE_MAXIMUM = global_coordinate_maximum;
 		value = "" + value;
 		var parts = value.replace(/\//g, '.').split('.');
 		if (parts.length >= 1) { this.z.library = parseInt(parts[0]); if (isNaN(this.z.library)) { this.z.library = 1; }}
@@ -482,8 +499,24 @@ export class Coordinate {
 		return false;
 	};
 
+	advance_to = (other) => {
+		var output = "";
+		while (this.less_than(other)) {
+			if (this.z.library < other.z.library)       { output += __internal_phext.LIBRARY_BREAK;    this.library_break();    continue; }
+			if (this.z.shelf < other.z.shelf)           { output += __internal_phext.SHELF_BREAK;      this.shelf_break();      continue; }
+			if (this.z.series < other.z.series)         { output += __internal_phext.SERIES_BREAK;     this.series_break();     continue; }
+			if (this.y.collection < other.y.collection) { output += __internal_phext.COLLECTION_BREAK; this.collection_break(); continue; }
+			if (this.y.volume < other.y.volume)         { output += __internal_phext.VOLUME_BREAK;     this.volume_break();     continue; }
+			if (this.y.book < other.y.book)             { output += __internal_phext.BOOK_BREAK;       this.book_break();       continue; }
+			if (this.x.chapter < other.x.chapter)       { output += __internal_phext.CHAPTER_BREAK;    this.chapter_break();    continue; }
+			if (this.x.section < other.x.section)       { output += __internal_phext.SECTION_BREAK;    this.section_break();    continue; }
+			if (this.x.scroll < other.x.scroll)         { output += __internal_phext.SCROLL_BREAK;     this.scroll_break();     continue; }
+		}
+		return output;
+	};
+
 	validate_index = (index) => {
-		return index >= this.COORDINATE_MINIMUM && index <= this.COORDINATE_MAXIMUM;
+		return index >= __internal_phext.COORDINATE_MINIMUM && index <= __internal_phext.COORDINATE_MAXIMUM;
   	};
 
 	validate_coordinate = () => {
@@ -509,8 +542,8 @@ export class Coordinate {
 
 	advance_coordinate = (index) => {
 		var next = index + 1;
-		if (next < this.COORDINATE_MAXIMUM) {
-		  return next;
+		if (next < __internal_phext.COORDINATE_MAXIMUM) {
+			return next;
 		}
 
 		return index;
@@ -563,6 +596,9 @@ export class Coordinate {
 	};
 }
 
+// internal static data
+var __internal_phext = new Phext(); // for constants
+
 // internal classes
 
 class OffsetsAndCoordinate {
@@ -571,6 +607,15 @@ class OffsetsAndCoordinate {
 		this.end = end;
 		this.coord = coord;
 		this.fallback = fallback;
+	}
+}
+
+class PositionedScroll {
+	constructor(coord, scroll, next, remaining) {
+		this.coord = coord;
+		this.scroll = scroll;
+		this.next = next;
+		this.remaining = remaining;
 	}
 }
 
