@@ -55,6 +55,7 @@ class Tests {
         this.test_coordinate_based_insert();
         this.test_coordinate_based_remove();
         this.test_coordinate_based_replace();
+        this.test_next_scroll();
     };
 
     test_coordinate_parsing = () => {
@@ -379,10 +380,25 @@ class Tests {
 
         // finally found the bugger!
         const coord_regression_2 = phext.to_coordinate("1.1.1/1.1.2/1.1.2");
-        const regression_2_baseline = "1.1.1\x171.1.2\x171.1.3\x171.1.4\x181.2.1\x171.2.2\x171.2.3\x171.2.4\x192.1.1\x193.1.1\x194.1.1\x1a2/1.1.1\x17\x17\x172/1.1.3\x1c2.1/1.1.1\x1d2.1.1/1.1.1\x1e2/1.1.1/1.1.1\x1f2.1/1.1.1/1.1.1\x012.1.1/1.1.1/1.1.1";
+        const regression_2_baseline = "1.1.1\x171.1.2\x171.1.3\x171.1.4\x181.2.1\x171.2.2\x171.2.3\x171.2.4\x192.1.1\x193.1.1\x194.1.1\x1a2/1.1.1\x17\x172/1.1.3\x1c2.1/1.1.1\x1d2.1.1/1.1.1\x1e2/1.1.1/1.1.1\x1f2.1/1.1.1/1.1.1\x012.1.1/1.1.1/1.1.1";
         const update_regression_2 = phext.replace(regression_2_baseline, coord_regression_2, "new content");
         assert_eq("CBR17", update_regression_2, "1.1.1\x171.1.2\x171.1.3\x171.1.4\x181.2.1\x171.2.2\x171.2.3\x171.2.4\x192.1.1\x193.1.1\x194.1.1\x1a2/1.1.1\x17new content\x172/1.1.3\x1c2.1/1.1.1\x1d2.1.1/1.1.1\x1e2/1.1.1/1.1.1\x1f2.1/1.1.1/1.1.1\x012.1.1/1.1.1/1.1.1", "editor regression");
     };
+
+    test_next_scroll() {
+        const doc1 = "3A\x17B2\x18C1";
+        const fetched1 = phext.next_scroll(doc1, phext.to_coordinate("1.1.1/1.1.1/1.1.1"));
+        assert_eq("NS1", fetched1.coord.to_string(), "1.1.1/1.1.1/1.1.1", "first scroll");
+        assert_eq("NS2", fetched1.scroll, "3A", "content");
+        assert_eq("NS3", fetched1.next.to_string(), "1.1.1/1.1.1/1.1.2", "second scroll");
+        assert_eq("NS4", fetched1.remaining, "B2\x18C1", "remaining");
+
+        const fetched2 = phext.next_scroll(fetched1.remaining, fetched1.next);
+        assert_eq("NS5", fetched2.coord.to_string(), "1.1.1/1.1.1/1.1.2", "second scroll");
+        assert_eq("NS6", fetched2.scroll, "B2", "content");
+        assert_eq("NS7", fetched2.next.to_string(), "1.1.1/1.1.1/1.2.1", "second scroll");
+        assert_eq("NS8", fetched2.remaining, "C1", "remaining");
+    }
 
     test_coordinate_based_remove() {
         // replace 'aaa' with ''

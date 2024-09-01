@@ -229,20 +229,43 @@ export class Phext {
 	};
 
 	replace = (phext, location, scroll) => {
-		var parts = this.get_subspace_coordinates(phext, location);
-		var start = parts.start;
-		var end = parts.end;
-		var subspace_coordinate = parts.coord;
-		var fixup = Array();
+		const phokens = this.phokenize(phext);
+		var coord = new Coordinate();
+		var result = "";
+		var inserted = scroll.length == 0;
+		
+		for (var i = 0; i < phokens.length; ++i) {
+			var ith = phokens[i];
+			if (ith.coord.equals(location)) {
+				if (!inserted) {
+					result += coord.advance_to(location);
+					result += scroll;
+					inserted = true;
+				}
+			} else {
+				if (inserted == false && ith.coord.greater_than(location))
+				{
+					result += coord.advance_to(location);
+					result += scroll;
+					inserted = true;
+				}
 
-		fixup += subspace_coordinate.advance_to(location);
-		var text = scroll;
-		var max = scroll.length;
-		if (end > max) { end = max; }
-		var left = scroll.substr(0, start);
-		var right = scroll.substr(end);
-		var temp = left + text + right;
-		return temp;
+				if (ith.scroll.length > 0) {
+					console.log(`advancing coord from ${coord.to_string()} to ${ith.coord.to_string()} and appending ${ith.scroll}`);
+					result += coord.advance_to(ith.coord);
+					result += ith.scroll;
+				}
+			}
+		}
+		
+		if (inserted == false)
+		{
+			result += coord.advance_to(location);
+			result += scroll;
+			inserted = true;
+		}
+
+		return result;
 	};
 
 	range_replace = (phext, location, scroll) => {
@@ -288,8 +311,8 @@ export class Phext {
         			pi += 1;
         			break;
       			}
-    		} else {      
-      			begin = location;
+    		} else {
+      			begin = new Coordinate(location.to_string());
       			output += phext[pi];
     		}
     		++pi;
@@ -304,20 +327,22 @@ export class Phext {
 	};
 
 	phokenize = (phext) => {
-		const result = new Array();
+		var result = Array();
   		var coord = new Coordinate();
-		var done = false;
 		
 		var temp = phext;
-		while (!done) {
+		while (true) {
 			var ith_result = this.next_scroll(temp, coord);
 			if (ith_result.scroll.length == 0)
 			{
 				break;
 			}
-			result += ith_result.scroll;
-			coord = ith_result.location;
+			result.push(ith_result);
+			coord = ith_result.next;
 			temp = ith_result.remaining;
+			if (ith_result.remaining.length == 0) {
+				break;
+			}
 		}
 
   		return result;
@@ -350,15 +375,15 @@ export class Phext {
 	contract = (phext) => {
 	};
 
-	dephokenize = (tokens) => {
+	dephokenize = (phokens) => {
 		var result = "";
   		var coord = new Coordinate();
-		for (var i = 0; i < tokens.length; ++i)
+		for (var i = 0; i < phokens.length; ++i)
 		{
-			var ps = tokens[i];
-			if (ps.scroll.length > 0) {								
-				result += coord.advance_to(ps.coord);
-				result += ps.scroll;
+			var ph = phokens[i];
+			if (ph.scroll.length > 0) {
+				result += coord.advance_to(ph.coord);
+				result += ph.scroll;
 			}
 		}
   		return result;
