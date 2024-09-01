@@ -28,9 +28,24 @@ export class Phext {
         this.ADDRESS_MACRO_BREAK = '/'; // delimiter for macro-coordinates
         this.ADDRESS_MACRO_ALT   = ';';   // also allow ';' for url encoding
 	}
+	
 	status = () => {
 		console.log(`Length: ${this.subspace.length}`);
 		console.log(`state: ${this.state}`);
+	};
+
+	create_range(start, end) {
+		return new Range(start, end);
+	}
+
+	check_for_cowbell(phext) {
+		for (var i = 0; i < phext.length; ++i) {
+			if (phext[i] == this.MORE_COWBELL) {
+				return true;
+			}
+		}
+	
+	  	return false;
 	};
 
 	get_subspace_coordinates = (subspace, target) => {
@@ -251,7 +266,6 @@ export class Phext {
 				}
 
 				if (ith.scroll.length > 0) {
-					console.log(`advancing coord from ${coord.to_string()} to ${ith.coord.to_string()} and appending ${ith.scroll}`);
 					result += coord.advance_to(ith.coord);
 					result += ith.scroll;
 				}
@@ -269,6 +283,16 @@ export class Phext {
 	};
 
 	range_replace = (phext, location, scroll) => {
+  		var parts_start = this.get_subspace_coordinates(phext, location.start);
+  		var parts_end = this.get_subspace_coordinates(phext, location.end);
+  		var start = parts_start.start;
+  		var end = parts_end.end;
+		const max = phext.length;
+		if (end > max) { end = max; }
+		const left = phext.substr(0, start);
+		const right = phext.substr(end);
+		const result = left + scroll + right;
+		return result;
 	};
 
 	insert = (buffer, location, scroll) => {
@@ -641,6 +665,13 @@ class PositionedScroll {
 		this.scroll = scroll;
 		this.next = next;
 		this.remaining = remaining;
+	}
+}
+
+class Range {
+	constructor(start, end) {
+		this.start = start;
+		this.end = end;
 	}
 }
 

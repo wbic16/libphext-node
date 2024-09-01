@@ -43,19 +43,27 @@ class Tests {
     constructor() {
     };
     run = () => {
+        /*
         Object.keys(this).forEach(key => {
             if (key.startsWith('test_')) {
                 this[key]();
             } else {
                 console.log(`----------------------- Ignoring ${key}`);
             }
-        });
+        });*/
 
         // TODO: why aren't these being found by Object.keys?
+        this.test_coordinate_parsing();
+        this.test_to_urlencoded();
+        this.test_scrolls();
+        this.test_coordinate_validity();
         this.test_coordinate_based_insert();
         this.test_coordinate_based_remove();
         this.test_coordinate_based_replace();
         this.test_next_scroll();
+        this.test_range_based_replace();
+        this.test_dead_reckoning();
+        this.test_line_break();
     };
 
     test_coordinate_parsing = () => {
@@ -290,6 +298,49 @@ class Tests {
         assert_eq("Scrolls", result, true);
     };
 
+    // note: these tests were written early in the rust implementation
+    // they're just boiler-plate/dummy tests (other tests definitely fail if they do)
+    // * test_sections
+    // * test_chapters
+    // * test_books
+    // * test_volumes
+    // * test_collections
+    // * test_series
+    // * test_shelves
+    // * test_libraries
+    
+    test_coordinate_validity = () => {
+        const c1 = phext.to_coordinate("0.0.0/0.0.0/0.0.0"); // invalid
+        var c2 = new Coordinate();
+        c2.z.library = 0; c2.z.shelf = 0; c2.z.series = 0;
+        c2.y.collection = 0; c2.y.volume = 0; c2.y.book = 0;
+        c2.x.chapter = 0; c2.x.section = 0; c2.x.scroll = 0;
+        assert_eq("CV1", c1.to_string(), c2.to_string(), "null coordinate");
+
+        const c1b = c1.validate_coordinate();
+        const c2b = c2.validate_coordinate();
+        assert_eq("CV2", c1b, false, "Invalid parsed");
+        assert_eq("CV3", c2b, false, "Invalid created");
+
+        const c3 = new Coordinate();
+        assert_eq("CV4", c3.validate_coordinate(), true, "default valid");
+    
+        const c4 = phext.to_coordinate("255.254.253/32.4.8/4.2.1"); // valid
+        const c5 = new Coordinate();
+        c5.z.library = 255; c5.z.shelf = 254; c5.z.series = 253;
+        c5.y.collection = 32; c5.y.volume = 4; c5.y.book = 8;
+        c5.x.chapter = 4; c5.x.section = 2; c5.x.scroll = 1;
+        assert_eq("CV5", c4.to_string(), c5.to_string(), "parse vs create");
+        assert_eq("CV6", c4.y.volume, 4, "spot check");
+        const c4b = c4.validate_coordinate();
+        const c5b = c5.validate_coordinate();
+        assert_eq("CV7", c4b, false, "out of range");
+        assert_eq("CV8", c5b, false, "out of range");
+
+        const c6 = new Coordinate("11.12.13/14.15.16/17.18.19");
+        assert_eq("CV9", c6.validate_coordinate(), true, "valid coordinate");
+    };
+
     test_coordinate_based_replace() {
         // replace 'AAA' with 'aaa'
         const coord0 = phext.to_coordinate("1.1.1/1.1.1/1.1.1");
@@ -451,6 +502,119 @@ class Tests {
         let update10 = phext.remove(update9, coord10);
         assert_eq("R10", update10, "", "remove jjj");
     };
+
+    test_range_based_replace = () => {
+        const doc1 = "Before\x19text to be replaced\x1Calso this\x1Dand this\x17After";
+        const range1 = phext.create_range(phext.to_coordinate("1.1.1/1.1.1/2.1.1"),
+                                   phext.to_coordinate("1.1.1/2.1.1/1.1.1"));
+        const update1 = phext.range_replace(doc1, range1, "");
+        assert_eq("RBR1", update1, "Before\x19\x17After", "multiple scrolls");
+
+        const doc2 = "Before\x01Library two\x01Library three\x01Library four";
+        const range2 = phext.create_range(phext.to_coordinate("2.1.1/1.1.1/1.1.1"),
+                                   phext.to_coordinate("3.1.1/1.1.1/1.1.1"));
+
+        const update2 = phext.range_replace(doc2, range2, "");
+        assert_eq("RBR2", update2, "Before\x01\x01Library four", "another case");
+    };
+
+    test_dead_reckoning() {
+        var test = "";
+        test += "random text in 1.1.1/1.1.1/1.1.1 that we can skip past";
+        test += phext.LIBRARY_BREAK;
+        test += "everything in here is at 2.1.1/1.1.1/1.1.1";
+        test += phext.SCROLL_BREAK;
+        test += "and now we're at 2.1.1/1.1.1/1.1.2";
+        test += phext.SCROLL_BREAK;
+        test += "moving on up to 2.1.1/1.1.1/1.1.3";
+        test += phext.BOOK_BREAK;
+        test += "and now over to 2.1.1/1.1.2/1.1.1";
+        test += phext.SHELF_BREAK;
+        test += "woot, up to 2.2.1/1.1.1/1.1.1";
+        test += phext.LIBRARY_BREAK;
+        test += "here we are at 3.1.1/1.1.1.1.1";
+        test += phext.LIBRARY_BREAK; // 4.1.1/1.1.1/1.1.1
+        test += phext.LIBRARY_BREAK; // 5.1.1/1.1.1/1.1.1
+        test += "getting closer to our target now 5.1.1/1.1.1/1.1.1";
+        test += phext.SHELF_BREAK; // 5.2.1
+        test += phext.SHELF_BREAK; // 5.3.1
+        test += phext.SHELF_BREAK; // 5.4.1
+        test += phext.SHELF_BREAK; // 5.5.1
+        test += phext.SERIES_BREAK; // 5.5.2
+        test += phext.SERIES_BREAK; // 5.5.3
+        test += phext.SERIES_BREAK; // 5.5.4
+        test += phext.SERIES_BREAK; // 5.5.5
+        test += "here we go! 5.5.5/1.1.1/1.1.1";
+        test += phext.COLLECTION_BREAK; // 5.5.5/2.1.1/1.1.1
+        test += phext.COLLECTION_BREAK; // 5.5.5/3.1.1/1.1.1
+        test += phext.COLLECTION_BREAK; // 5.5.5/4.1.1/1.1.1
+        test += phext.BOOK_BREAK; // 5.5.5/4.1.2/1.1.1
+        test += phext.BOOK_BREAK; // 5.5.5/4.1.3/1.1.1
+        test += phext.BOOK_BREAK; // 5.5.5/4.1.4/1.1.1
+        test += "this test appears at 5.5.5/4.1.4/1.1.1";
+        test += phext.VOLUME_BREAK; // 5.5.5/4.2.1/1.1.1
+        test += phext.VOLUME_BREAK; // 5.5.5/4.3.1/1.1.1
+        test += phext.VOLUME_BREAK; // 5.5.5/4.4.1/1.1.1
+        test += phext.VOLUME_BREAK; // 5.5.5/4.5.1/1.1.1
+        test += phext.VOLUME_BREAK; // 5.5.5/4.6.1/1.1.1
+        test += phext.CHAPTER_BREAK; // 5.5.5/4.6.1/2.1.1
+        test += phext.CHAPTER_BREAK; // 5.5.5/4.6.1/3.1.1
+        test += phext.CHAPTER_BREAK; // 5.5.5/4.6.1/4.1.1
+        test += phext.CHAPTER_BREAK; // 5.5.5/4.6.1/5.1.1
+        test += phext.BOOK_BREAK; // 5.5.5/4.6.2/1.1.1
+        test += phext.BOOK_BREAK; // 5.5.5/4.6.3/1.1.1
+        test += phext.BOOK_BREAK; // 5.5.5/4.6.4/1.1.1
+        test += phext.BOOK_BREAK; // 5.5.5/4.6.5/1.1.1
+        test += phext.BOOK_BREAK; // 5.5.5/4.6.6/1.1.1
+        test += phext.BOOK_BREAK; // 5.5.5/4.6.7/1.1.1
+        test += phext.CHAPTER_BREAK; // 5.5.5/4.6.7/2.1.1
+        test += phext.CHAPTER_BREAK; // 5.5.5/4.6.7/3.1.1
+        test += phext.CHAPTER_BREAK; // 5.5.5/4.6.7/4.1.1
+        test += phext.CHAPTER_BREAK; // 5.5.5/4.6.7/5.1.1
+        test += phext.SCROLL_BREAK; // 5.5.5/4.6.7/5.1.2
+        test += phext.SCROLL_BREAK; // 5.5.5/4.6.7/5.1.3
+        test += phext.SCROLL_BREAK; // 5.5.5/4.6.7/5.1.4
+        test += phext.SCROLL_BREAK; // 5.5.5/4.6.7/5.1.5
+        test += phext.SCROLL_BREAK; // 5.5.5/4.6.7/5.1.6
+        test += "here's a test at 5.5.5/4.6.7/5.1.6";
+        test += phext.SCROLL_BREAK; // 5.5.5/4.6.7/5.1.7
+        test += phext.CHAPTER_BREAK; // 5.5.5/4.6.7/6.1.1
+        test += phext.CHAPTER_BREAK; // 5.5.5/4.6.7/7.1.1
+        test += phext.CHAPTER_BREAK; // 5.5.5/4.6.7/8.1.1
+        test += phext.CHAPTER_BREAK; // 5.5.5/4.6.7/9.1.1
+        test += phext.SECTION_BREAK; // 5.5.5/4.6.7/9.2.1
+        test += phext.SECTION_BREAK; // 5.5.5/4.6.7/9.3.1
+        test += phext.SECTION_BREAK; // 5.5.5/4.6.7/9.4.1
+        test += phext.SECTION_BREAK; // 5.5.5/4.6.7/9.5.1
+        test += phext.SCROLL_BREAK;  // 5.5.5/4.6.7/9.5.2
+        test += phext.SCROLL_BREAK;  // 5.5.5/4.6.7/9.5.3
+        test += phext.SCROLL_BREAK;  // 5.5.5/4.6.7/9.5.4
+        test += phext.SCROLL_BREAK;  // 5.5.5/4.6.7/9.5.5
+        test += phext.SCROLL_BREAK;  // 5.5.5/4.6.7/9.5.6
+        test += phext.SCROLL_BREAK;  // 5.5.5/4.6.7/9.5.7
+        test += phext.SCROLL_BREAK;  // 5.5.5/4.6.7/9.5.8
+        test += phext.SCROLL_BREAK;  // 5.5.5/4.6.7/9.5.9
+        test += "Expected Test Pattern Alpha Whisky Tango Foxtrot";
+        const coord = phext.to_coordinate("5.5.5/4.6.7/9.5.9");
+        const result = phext.fetch(test, coord);
+        assert_eq("DR1", result, "Expected Test Pattern Alpha Whisky Tango Foxtrot", "chosen scroll");
+
+        const coord2 = phext.to_coordinate("5.5.5/4.6.7/5.1.6");
+        const result2 = phext.fetch(test, coord2);
+        assert_eq("DR2", result2, "here's a test at 5.5.5/4.6.7/5.1.6", "second scroll test");
+    };
+
+    test_line_break = () => {
+        assert_eq("LB1", phext.LINE_BREAK, '\n', "Backwards compatibility with plain text");
+    }
+
+    test_more_cowbell = () => {
+        const test1 = phext.check_for_cowbell("Hello\x07");
+        const test2 = phext.check_for_cowbell("nope\x17just more scrolls");
+        assert_eq("MC1", phext.MORE_COWBELL, '\x07', "ASCII Fun");
+        assert_eq("MC2", test1, true, "Expect Passed");
+        assert_eq("MC3", test2, false, "Expect Failed");
+    }
 }
 var runner = new Tests();
 runner.run();
