@@ -1,4 +1,6 @@
 const { Phext, Coordinate } = require("@libphext/core-js");
+const fs = require('node:fs');
+
 const phext = new Phext("hello world");
 phext.status();
 function verify(test_name, constant, value) {
@@ -64,6 +66,21 @@ class Tests {
         this.test_range_based_replace();
         this.test_dead_reckoning();
         this.test_line_break();
+        this.test_more_cowbell();
+        this.test_phokenize();
+        this.test_merge();
+        this.test_subtract();
+        this.test_normalize();
+        this.test_expand();
+        this.test_contract();
+        this.test_fs_read_write();
+        this.test_replace_create();
+        this.test_summary();
+        this.test_navmap();
+        this.test_textmap();
+        this.test_phext_index();
+        this.test_scroll_manifest();
+        this.test_phext_soundex_v1();
     };
 
     test_coordinate_parsing = () => {
@@ -73,7 +90,7 @@ class Tests {
         assert_eq("CP", address, example_coordinate, "Coordinate parsing failed");
 
         const weird_coordinate = "HOME";
-        let test_weird = phext.to_coordinate(weird_coordinate).to_string();
+        const test_weird = phext.to_coordinate(weird_coordinate).to_string();
         assert_eq("CP", "1.1.1/1.1.1/1.1.1", test_weird, "Weird coordinate parsing failed");
     };
 
@@ -463,43 +480,43 @@ class Tests {
         assert_eq("R2", update2, "\x18ccc\x19ddd\x1Aeee\x1Cfff\x1Dggg\x1Ehhh\x1Fiii\x01jjj", "remove bbb");
 
         // replace 'ccc' with ''
-        let coord3 = phext.to_coordinate("1.1.1/1.1.1/1.2.1");
-        let update3 = phext.remove(update2, coord3);
+        const coord3 = phext.to_coordinate("1.1.1/1.1.1/1.2.1");
+        const update3 = phext.remove(update2, coord3);
         assert_eq("R3", update3, "\x19ddd\x1Aeee\x1Cfff\x1Dggg\x1Ehhh\x1Fiii\x01jjj", "remove ccc");
 
         // replace 'ddd' with ''
-        let coord4 = phext.to_coordinate("1.1.1/1.1.1/2.1.1");
-        let update4 = phext.remove(update3, coord4);
+        const coord4 = phext.to_coordinate("1.1.1/1.1.1/2.1.1");
+        const update4 = phext.remove(update3, coord4);
         assert_eq("R4", update4, "\x1Aeee\x1Cfff\x1Dggg\x1Ehhh\x1Fiii\x01jjj", "remove ddd");
 
         // replace 'eee' with ''
-        let coord5 = phext.to_coordinate("1.1.1/1.1.2/1.1.1");
-        let update5 = phext.remove(update4, coord5);
+        const coord5 = phext.to_coordinate("1.1.1/1.1.2/1.1.1");
+        const update5 = phext.remove(update4, coord5);
         assert_eq("R5", update5, "\x1Cfff\x1Dggg\x1Ehhh\x1Fiii\x01jjj", "remove eee");
 
         // replace 'fff' with ''
-        let coord6 = phext.to_coordinate("1.1.1/1.2.1/1.1.1");
-        let update6 = phext.remove(update5, coord6);
+        const coord6 = phext.to_coordinate("1.1.1/1.2.1/1.1.1");
+        const update6 = phext.remove(update5, coord6);
         assert_eq("R6", update6, "\x1Dggg\x1Ehhh\x1Fiii\x01jjj", "remove fff");
 
         // replace 'ggg' with ''
-        let coord7 = phext.to_coordinate("1.1.1/2.1.1/1.1.1");
-        let update7 = phext.remove(update6, coord7);
+        const coord7 = phext.to_coordinate("1.1.1/2.1.1/1.1.1");
+        const update7 = phext.remove(update6, coord7);
         assert_eq("R7", update7, "\x1Ehhh\x1Fiii\x01jjj", "remove ggg");
 
         // replace 'hhh' with ''
-        let coord8 = phext.to_coordinate("1.1.2/1.1.1/1.1.1");
-        let update8 = phext.remove(update7, coord8);
+        const coord8 = phext.to_coordinate("1.1.2/1.1.1/1.1.1");
+        const update8 = phext.remove(update7, coord8);
         assert_eq("R8", update8, "\x1Fiii\x01jjj", "remove hhh");
 
         // replace 'iii' with ''
-        let coord9 = phext.to_coordinate("1.2.1/1.1.1/1.1.1");
-        let update9 = phext.remove(update8, coord9);
+        const coord9 = phext.to_coordinate("1.2.1/1.1.1/1.1.1");
+        const update9 = phext.remove(update8, coord9);
         assert_eq("R9", update9, "\x01jjj", "remove iii");
 
         // replace 'jjj' with ''
-        let coord10 = phext.to_coordinate("2.1.1/1.1.1/1.1.1");
-        let update10 = phext.remove(update9, coord10);
+        const coord10 = phext.to_coordinate("2.1.1/1.1.1/1.1.1");
+        const update10 = phext.remove(update9, coord10);
         assert_eq("R10", update10, "", "remove jjj");
     };
 
@@ -606,7 +623,7 @@ class Tests {
 
     test_line_break = () => {
         assert_eq("LB1", phext.LINE_BREAK, '\n', "Backwards compatibility with plain text");
-    }
+    };
 
     test_more_cowbell = () => {
         const test1 = phext.check_for_cowbell("Hello\x07");
@@ -614,7 +631,323 @@ class Tests {
         assert_eq("MC1", phext.MORE_COWBELL, '\x07', "ASCII Fun");
         assert_eq("MC2", test1, true, "Expect Passed");
         assert_eq("MC3", test2, false, "Expect Failed");
-    }
+    };
+
+    test_phokenize = () => {
+        const doc1 = "one\x17two\x17three\x17four";
+        var expected1 = new Array();
+        expected1.push(phext.create_positioned_scroll(phext.to_coordinate("1.1.1/1.1.1/1.1.1"), "one"));
+        expected1.push(phext.create_positioned_scroll(phext.to_coordinate("1.1.1/1.1.1/1.1.2"), "two"));
+        expected1.push(phext.create_positioned_scroll(phext.to_coordinate("1.1.1/1.1.1/1.1.3"), "three"));
+        expected1.push(phext.create_positioned_scroll(phext.to_coordinate("1.1.1/1.1.1/1.1.4"), "four"));
+        const update1 = phext.phokenize(doc1);
+        assert_eq("PH1.1", update1.length, expected1.length, "Positioned Scroll 1");
+        for (var i = 0; i < expected1.length; ++i)
+        {
+            assert_eq(`PH1.2-${i}`, update1[i].scroll, expected1[i].scroll, `Contents 1-${i}`);
+            assert_eq(`PH1.3-${i}`, update1[i].coord, expected1[i].coord, `Coordinates 1-${i}`);
+        }
+
+        const doc2 = "one\x01two\x1Fthree\x1Efour\x1Dfive\x1Csix\x1Aseven\x19eight\x18nine\x17ten";
+        var expected2 = new Array();
+        expected2.push(phext.create_positioned_scroll(phext.to_coordinate("1.1.1/1.1.1/1.1.1"), "one"));
+        expected2.push(phext.create_positioned_scroll(phext.to_coordinate("2.1.1/1.1.1/1.1.1"), "two"));
+        expected2.push(phext.create_positioned_scroll(phext.to_coordinate("2.2.1/1.1.1/1.1.1"), "three"));
+        expected2.push(phext.create_positioned_scroll(phext.to_coordinate("2.2.2/1.1.1/1.1.1"), "four"));
+        expected2.push(phext.create_positioned_scroll(phext.to_coordinate("2.2.2/2.1.1/1.1.1"), "five"));
+        expected2.push(phext.create_positioned_scroll(phext.to_coordinate("2.2.2/2.2.1/1.1.1"), "six"));
+        expected2.push(phext.create_positioned_scroll(phext.to_coordinate("2.2.2/2.2.2/1.1.1"), "seven"));
+        expected2.push(phext.create_positioned_scroll(phext.to_coordinate("2.2.2/2.2.2/2.1.1"), "eight"));
+        expected2.push(phext.create_positioned_scroll(phext.to_coordinate("2.2.2/2.2.2/2.2.1"), "nine"));
+        expected2.push(phext.create_positioned_scroll(phext.to_coordinate("2.2.2/2.2.2/2.2.2"), "ten"));
+        const update2 = phext.phokenize(doc2);
+        assert_eq("PH2.1", update2.length, expected2.length, "Positioned Scroll 2");
+        for (var i = 0; i < expected2.length; ++i)
+        {
+            assert_eq("PH2.2", update2[i].scroll, expected2[i].scroll, "Contents 2");
+            assert_eq("PH2.3", update2[i].coord, expected2[i].coord, "Coordinates 2");
+        }
+
+        const doc3 = "one\x17two\x18three\x19four\x1afive\x1csix\x1dseven\x1eeight\x1fnine\x01ten";
+        var expected3 = new Array();
+        expected3.push(phext.create_positioned_scroll(phext.to_coordinate("1.1.1/1.1.1/1.1.1"), "one"));
+        expected3.push(phext.create_positioned_scroll(phext.to_coordinate("1.1.1/1.1.1/1.1.2"), "two"));
+        expected3.push(phext.create_positioned_scroll(phext.to_coordinate("1.1.1/1.1.1/1.2.1"), "three"));
+        expected3.push(phext.create_positioned_scroll(phext.to_coordinate("1.1.1/1.1.1/2.1.1"), "four"));
+        expected3.push(phext.create_positioned_scroll(phext.to_coordinate("1.1.1/1.1.2/1.1.1"), "five"));
+        expected3.push(phext.create_positioned_scroll(phext.to_coordinate("1.1.1/1.2.1/1.1.1"), "six"));
+        expected3.push(phext.create_positioned_scroll(phext.to_coordinate("1.1.1/2.1.1/1.1.1"), "seven"));
+        expected3.push(phext.create_positioned_scroll(phext.to_coordinate("1.1.2/1.1.1/1.1.1"), "eight"));
+        expected3.push(phext.create_positioned_scroll(phext.to_coordinate("1.2.1/1.1.1/1.1.1"), "nine"));
+        expected3.push(phext.create_positioned_scroll(phext.to_coordinate("2.1.1/1.1.1/1.1.1"), "ten"));
+        var update3 = phext.phokenize(doc3);
+        assert_eq("PH3.1", update3, expected3, "Positioned Scroll 3");
+        for (var i = 0; i < expected3.length; ++i)
+        {
+            assert_eq("PH3.2", update3[i].scroll, expected3[i].scroll, "Contents 3");
+            assert_eq("PH3.3", update3[i].coord, expected3[i].coord, "Coordinates 3");
+        }
+
+        const doc4 = "\x1A\x1C\x1D\x1E\x1F\x01stuff here";
+        var expected4 = new Array();
+        expected4.push(phext.create_positioned_scroll(phext.to_coordinate("2.1.1/1.1.1/1.1.1"), "stuff here"));
+        const update4 = phext.phokenize(doc4);
+        assert_eq("PH4.1", update4, expected4, "Positioned Scroll 4");
+        for (var i = 0; i < expected4.length; ++i)
+        {
+            assert_eq("PH4.2", update4[i].scroll, expected4[i].scroll, "Contents 4");
+            assert_eq("PH4.3", update4[i].coord, expected4[i].coord, "Coordinates 4");
+        }
+    };
+
+    test_merge = () => {
+        const doc_1a = "3A\x17B2";
+        const doc_1b = "4C\x17D1";
+        const update_1 = phext.merge(doc_1a, doc_1b);
+        assert_eq("M1", update_1, "3A4C\x17B2D1", "Merge Case 1");
+
+        const doc_2a = "Hello \x17I've come to talk";
+        const doc_2b = "Darkness, my old friend.\x17 with you again.";
+        const update_2 = phext.merge(doc_2a, doc_2b);
+        assert_eq("M2", update_2, "Hello Darkness, my old friend.\x17I've come to talk with you again.", "pre-merge");
+
+        const doc_3a = "One\x17Two\x18Three\x19Four";
+        const doc_3b = "1\x172\x183\x194";
+        const update_3 = phext.merge(doc_3a, doc_3b);
+        assert_eq("M3", update_3, "One1\x17Two2\x18Three3\x19Four4", "4D merge");
+
+        const doc_4a = "\x1A\x1C\x1D\x1E\x1F\x01stuff here";
+        const doc_4b = "\x1A\x1C\x1D\x1Eprecursor here\x1F\x01and more";
+        const update_4 = phext.merge(doc_4a, doc_4b);
+        assert_eq("M4", update_4, "\x1Eprecursor here\x01stuff hereand more", "8D merge");
+
+        const doc_5a = "\x01\x01 Library at 3.1.1/1.1.1/1.1.1 \x1F Shelf at 3.2.1/1.1.1/1.1.1";
+        const doc_5b = "\x01\x01\x01 Library 4.1.1/1.1.1/1.1.1 \x1E Series at 4.1.2/1.1.1/1.1.1";
+        const update_5 = phext.merge(doc_5a, doc_5b);
+        assert_eq("M5", update_5, "\x01\x01 Library at 3.1.1/1.1.1/1.1.1 \x1F Shelf at 3.2.1/1.1.1/1.1.1\x01 Library 4.1.1/1.1.1/1.1.1 \x1E Series at 4.1.2/1.1.1/1.1.1", "Library+Shelf");
+
+        const doc_6a = "\x1D Collection at 1.1.1/2.1.1/1.1.1\x1C Volume at 1.1.1/2.2.1/1.1.1";
+        const doc_6b = "\x1D\x1D Collection at 1.1.1/3.1.1/1.1.1\x1C Volume at 1.1.1/3.2.1/1.1.1";
+        const update_6 = phext.merge(doc_6a, doc_6b);
+        assert_eq("M6", update_6, "\x1D Collection at 1.1.1/2.1.1/1.1.1\x1C Volume at 1.1.1/2.2.1/1.1.1\x1D Collection at 1.1.1/3.1.1/1.1.1\x1C Volume at 1.1.1/3.2.1/1.1.1", "Collection+Volume");
+
+        const doc_7a = "\x1ABook #2 Part 1\x1ABook #3 Part 1";
+        const doc_7b = "\x1A + Part II\x1A + Part Deux";
+        const update_7 = phext.merge(doc_7a, doc_7b);
+        assert_eq("M7", update_7, "\x1ABook #2 Part 1 + Part II\x1ABook #3 Part 1 + Part Deux", "Books");
+
+        const doc8a = "AA\x01BB\x01CC";
+        const doc8b = "__\x01__\x01__";
+        const update8 = phext.merge(doc8a, doc8b);
+        assert_eq("M8", update8, "AA__\x01BB__\x01CC__", "More libraries");
+    };
+
+    test_subtract = () => {
+        const doc1a = "Here's scroll one.\x17Scroll two.";
+        const doc1b = "Just content at the first scroll";
+        const update1 = phext.subtract(doc1a, doc1b);
+        assert_eq("SUB1", update1, "\x17Scroll two.", "Basic scrubbing");
+    };
+
+    test_normalize = () => {
+        const doc1 = "\x17Scroll two\x18\x18\x18\x18";
+        const update1 = phext.normalize(doc1);
+        assert_eq("N1", update1, "\x17Scroll two", "Pruning empty ranges");
+
+        const doc2 = "\x17Scroll two\x01\x17\x17\x19\x1a\x01Third library";
+        const update2 = phext.normalize(doc2);
+        assert_eq("N2", update2, "\x17Scroll two\x01\x01Third library");
+    };
+
+    test_expand = () => {
+        const doc1 = "nothing but line breaks\nto test expansion to scrolls\nline 3";
+        const update1 = phext.expand(doc1);
+        assert_eq("E1", update1, "nothing but line breaks\x17to test expansion to scrolls\x17line 3", "LB -> SC");
+
+        const update2 = phext.expand(update1);
+        assert_eq("E2", update2, "nothing but line breaks\x18to test expansion to scrolls\x18line 3", "SC -> SN");
+
+        const update3 = phext.expand(update2);
+        assert_eq("E3", update3, "nothing but line breaks\x19to test expansion to scrolls\x19line 3", "SN -> CH");
+
+        const update4 = phext.expand(update3);
+        assert_eq("E4", update4, "nothing but line breaks\x1Ato test expansion to scrolls\x1Aline 3", "CH -> BK");
+
+        const update5 = phext.expand(update4);
+        assert_eq("E5", update5, "nothing but line breaks\x1Cto test expansion to scrolls\x1Cline 3", "BK -> VM");
+
+        const update6 = phext.expand(update5);
+        assert_eq("E6", update6, "nothing but line breaks\x1Dto test expansion to scrolls\x1Dline 3", "VM -> CN");
+
+        const update7 = phext.expand(update6);
+        assert_eq("E7", update7, "nothing but line breaks\x1Eto test expansion to scrolls\x1Eline 3", "CN -> SR");
+
+        const update8 = phext.expand(update7);
+        assert_eq("E8", update8, "nothing but line breaks\x1Fto test expansion to scrolls\x1Fline 3", "SR -> SF");
+
+        const update9 = phext.expand(update8);
+        assert_eq("E9", update9, "nothing but line breaks\x01to test expansion to scrolls\x01line 3", "SF -> LB");
+
+        const update10 = phext.expand(update9);
+        assert_eq("E10", update10, "nothing but line breaks\x01to test expansion to scrolls\x01line 3", "LB -> LB");
+
+        const doc11 = "AAA\n222\x17BBB\x18CCC\x19DDD\x1AEEE\x1CFFF\x1DGGG\x1EHHH\x1FIII\x01JJJ";
+        const update11 = phext.expand(doc11);
+        assert_eq("E11", update11, "AAA\x17222\x18BBB\x19CCC\x1ADDD\x1CEEE\x1DFFF\x1EGGG\x1FHHH\x01III\x01JJJ", "all at once");
+    };
+
+    test_contract = () => {
+        const doc1 = "A more complex example than expand\x01----\x1F++++\x1E____\x1Doooo\x1C====\x1Azzzz\x19gggg\x18....\x17qqqq";
+        const update1 = phext.contract(doc1);
+        assert_eq("C1", update1, "A more complex example than expand\x1F----\x1E++++\x1D____\x1Coooo\x1A====\x19zzzz\x18gggg\x17....\x0Aqqqq", "drop back");
+
+        const update2 = phext.contract(update1);
+        assert_eq("C2", update2, "A more complex example than expand\x1E----\x1D++++\x1C____\x1Aoooo\x19====\x18zzzz\x17gggg\x0A....\x0Aqqqq", "another sanity check");
+    };
+
+    test_fs_read_write = () => {        
+        const filename = "unit-test.phext";
+        const initial = "a simple phext doc with three scrolls\x17we just want to verify\x17that all of our breaks are making it through rust's fs layer.\x18section 2\x19chapter 2\x1Abook 2\x1Cvolume 2\x1Dcollection 2\x1Eseries 2\x1Fshelf 2\x01library 2";
+        fs.writeFileSync(filename, initial);
+
+        const compare = fs.readFileSync(filename);
+        assert_eq("FS1", compare, initial, "serialization");
+    };
+
+    test_replace_create = () => {
+        const initial = "A\x17B\x17C\x18D\x19E\x1AF\x1CG\x1DH\x1EI\x1FJ\x01K";
+        const coordinate = "3.1.1/1.1.1/1.1.1";
+        const message = phext.replace(initial, phext.to_coordinate(coordinate), "L");
+        assert_eq("RC1", message, "A\x17B\x17C\x18D\x19E\x1AF\x1CG\x1DH\x1EI\x1FJ\x01K\x01L", "Create + Replace");
+    };
+
+    test_summary() {
+        const doc1 = "A short phext\nSecond line\x17second scroll.............................";
+        const update1 = phext.create_summary(doc1);
+        assert_eq("SU1", update1, "A short phext...", "Terse!");
+
+        const doc2 = "very terse";
+        const update2 = phext.create_summary(doc2);
+        assert_eq("SU2", update2, "very terse", "much wow");
+    };
+
+    test_navmap = () => {
+        const example = "Just a couple of scrolls.\x17Second scroll\x17Third scroll";
+        const result = phext.navmap("http://127.0.0.1/api/v1/index/", example);
+        assert_eq("NM1", result, "<ul>\n<li><a href=\"http://127.0.0.1/api/v1/index/1.1.1;1.1.1;1.1.1\">1.1.1/1.1.1/1.1.1 Just a couple of scrolls.</a></li>\n<li><a href=\"http://127.0.0.1/api/v1/index/1.1.1;1.1.1;1.1.2\">1.1.1/1.1.1/1.1.2 Second scroll</a></li>\n<li><a href=\"http://127.0.0.1/api/v1/index/1.1.1;1.1.1;1.1.3\">1.1.1/1.1.1/1.1.3 Third scroll</a></li>\n</ul>\n", "HTML Navigation Menu");
+    };
+
+    test_textmap = () => {
+        const example = "Just a couple of scrolls.\x17Second scroll\x17Third scroll";
+        const result = phext.textmap(example);
+        assert_eq("TM1", result, "* 1.1.1/1.1.1/1.1.1: Just a couple of scrolls.\n* 1.1.1/1.1.1/1.1.2: Second scroll\n* 1.1.1/1.1.1/1.1.3: Third scroll\n", "Text-only navigation map");
+    };
+
+    test_phext_index = () => {
+        const example = "first scroll\x17second scroll\x18second section\x19second chapter\x1Abook 2\x1Cvolume 2\x1Dcollection 2\x1Eseries 2\x1Fshelf 2\x01library 2";
+        const result = phext.index(example);
+        assert_eq("PI1", result, "0\x1713\x1827\x1942\x1a57\x1c64\x1d73\x1e86\x1f95\x01103", "offset calculation");
+
+        const coord1 = phext.to_coordinate("1.1.1/1.1.1/1.1.1");
+        const test1 = phext.offset(example, coord1);
+        assert_eq("PI2", test1, 0, "offset verification");
+
+        const coord2 = phext.to_coordinate("1.1.1/1.1.1/1.1.2");
+        const test2 = phext.offset(example, coord2);
+        assert_eq("PI3", test2, 13, "offset verification");
+
+        const coord3 = phext.to_coordinate("1.1.1/1.1.1/1.2.1");
+        const test3 = phext.offset(example, coord3);
+        assert_eq("PI4", test3, 27, "offset verification");
+
+        const coord4 = phext.to_coordinate("1.1.1/1.1.1/2.1.1");
+        const test4 = phext.offset(example, coord4);
+        assert_eq("PI5", test4, 42, "offset verification");
+
+        const coord5 = phext.to_coordinate("1.1.1/1.1.2/1.1.1");
+        const test5 = phext.offset(example, coord5);
+        assert_eq("PI6", test5, 57, "offset verification");
+
+        const coord6 = phext.to_coordinate("1.1.1/1.2.1/1.1.1");
+        const test6 = phext.offset(example, coord6);
+        assert_eq("PI7", test6, 64, "offset verification");
+
+        const coord7 = phext.to_coordinate("1.1.1/2.1.1/1.1.1");
+        const test7 = phext.offset(example, coord7);
+        assert_eq("PI8", test7, 73, "offset verification");
+
+        const coord8 = phext.to_coordinate("1.1.2/1.1.1/1.1.1");
+        const test8 = phext.offset(example, coord8);
+        assert_eq("PI9", test8, 86, "offset verification");
+
+        const coord9 = phext.to_coordinate("1.2.1/1.1.1/1.1.1");
+        const test9 = phext.offset(example, coord9);
+        assert_eq("PI10", test9, 95, "offset verification");
+
+        const coord10 = phext.to_coordinate("2.1.1/1.1.1/1.1.1");
+        const test10 = phext.offset(example, coord10);
+        assert_eq("PI11", test10, 103, "offset verification");
+
+        const coord_invalid = phext.to_coordinate("2.1.1/1.1.1/1.2.1");
+        const test_invalid = phext.offset(example, coord_invalid);
+        assert_eq("PI12", test_invalid, 103);
+
+        assert_eq("PI13", example.length, 112);
+    };
+
+    test_scroll_manifest = () => {
+        const example = "first scroll\x17second scroll\x18second section\x19second chapter\x1Abook 2\x1Cvolume 2\x1Dcollection 2\x1Eseries 2\x1Fshelf 2\x01library 2";
+        const result = phext.manifest(example);
+
+        const scroll1 = "first scroll";
+        const hash1 = phext.checksum(scroll1);
+        assert_eq("SM1", hash1, "ba9d944e4967e29d48bae69ac2999699", "hash verification");
+
+        const scroll2 = "second scroll";
+        const hash2 = phext.checksum(scroll2);
+        assert_eq("SM2", hash2, "2fe1b2040314ac66f132dd3b4926157c", "hash verification");
+
+        const scroll3 = "second section";
+        const hash3 = phext.checksum(scroll3);
+        assert_eq("SM3", hash3, "fddb6916753b6f4e0b5281469134778b", "hash verification");
+
+        const scroll4 = "second chapter";
+        const hash4 = phext.checksum(scroll4);
+        assert_eq("SM4", hash4, "16ab5b1a0a997db95ec215a3bf2c57b3", "hash verification");
+
+        const scroll5 = "book 2";
+        const hash5 = phext.checksum(scroll5);
+        assert_eq("SM5", hash5, "f20f79bf36f63e8fba25cc6765e2d0d", "hash verification");
+
+        const scroll6 = "volume 2";
+        const hash6 = phext.checksum(scroll6);
+        assert_eq("SM6", hash6, "7ead0c6fef43adb446fe3bda6fb0adc7", "hash verification");
+
+        const scroll7 = "collection 2";
+        const hash7 = phext.checksum(scroll7);
+        assert_eq("SM7", hash7, "78c12298931c6edede92962137a9280a", "hash verification");
+
+        const scroll8 = "series 2";
+        const hash8 = phext.checksum(scroll8);
+        assert_eq("SM8", hash8, "f35100c84df601a490b7b63d7e8c0a8", "hash verification");
+
+        const scroll9 = "shelf 2";
+        const hash9 = phext.checksum(scroll9);
+        assert_eq("SM9", hash9, "3bbf7e67cb33d613a906bc5a3cbefd95", "hash verification");
+
+        const scroll10 = "library 2";
+        const hash10 = phext.checksum(scroll10);
+        assert_eq("SM10", hash10, "2e7fdd387196a8a2706ccb9ad6792bc3", "hash verification");
+
+        const expected = `${hash1}\x17${hash2}\x18${hash3}\x19${hash4}\x1A${hash5}\x1C${hash6}\x1D${hash7}\x1E${hash8}\x1F${hash9}\x01${hash10}`;
+        assert_eq("SM11", result, expected);
+    };
+
+    test_phext_soundex_v1 = () => {
+        const sample = "it was the best of scrolls\x17it was the worst of scrolls\x17aaa\x17bbb\x17ccc\x17ddd\x17eee\x17fff\x17ggg\x17hhh\x17iii\x17jjj\x17kkk\x17lll\x18mmm\x18nnn\x18ooo\x18ppp\x19qqq\x19rrr\x19sss\x19ttt\x1auuu\x1avvv\x1awww\x1axxx\x1ayyy\x1azzz";
+        const result = phext.soundex_v1(sample);
+        assert_eq("PSV1", result, "36\x1741\x171\x174\x177\x1710\x171\x174\x177\x171\x171\x177\x177\x1713\x1816\x1816\x181\x184\x197\x1919\x197\x1910\x1a1\x1a4\x1a1\x1a7\x1a1\x1a7", "Soundex");
+    };
 }
 var runner = new Tests();
 runner.run();

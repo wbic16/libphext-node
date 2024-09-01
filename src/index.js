@@ -7,6 +7,9 @@
 // This project was ported from https://github.com/wbic16/libphext-rs/blob/master/src/phext.rs.
 // Web Site: https://phext.io/
 // -----------------------------------------------------------------------------------------------------------
+const { Buffer } = require('buffer');
+const { XXH3_128 } = require('xxh3-ts');
+
 export class Phext {
 	constructor(subspace) {
 		this.subspace = subspace;
@@ -36,6 +39,10 @@ export class Phext {
 
 	create_range(start, end) {
 		return new Range(start, end);
+	};
+
+	create_positioned_scroll(coord, scroll, next, remaining) {
+		return new PositionedScroll(coord, scroll, next, remaining);
 	}
 
 	check_for_cowbell(phext) {
@@ -143,14 +150,14 @@ export class Phext {
 	};
 
 	checksum = (phext) => {
-		var hash = todo_xxh3_128(phext);
+		var hash = XXH3_128(Buffer.from(phext));
 		return hash;
 	};
 
 	manifest = (phext) => {
 		var phokens = this.phokenize(phext);
 		for (var i = 0; i < phokens.length; ++i) {
-		  phokens[i].scroll = checksum(phokens[i].scroll);
+		  phokens[i].scroll = this.checksum(phokens[i].scroll);
 		  ++i;
 		}
 
@@ -168,12 +175,12 @@ export class Phext {
 		var value = 1; // 1-100
 		for (var i = 0; i < buffer.length; ++i) {
 		  var c = buffer[i];
-		  if (letter1.contains(c)) { value += 1; continue; }
-		  if (letter2.contains(c)) { value += 2; continue; }
-		  if (letter3.contains(c)) { value += 3; continue; }
-		  if (letter4.contains(c)) { value += 4; continue; }
-		  if (letter5.contains(c)) { value += 5; continue; }
-		  if (letter6.contains(c)) { value += 6; continue; }
+		  if (letter1.indexOf(c) >= 0) { value += 1; continue; }
+		  if (letter2.indexOf(c) >= 0) { value += 2; continue; }
+		  if (letter3.indexOf(c) >= 0) { value += 3; continue; }
+		  if (letter4.indexOf(c) >= 0) { value += 4; continue; }
+		  if (letter5.indexOf(c) >= 0) { value += 5; continue; }
+		  if (letter6.indexOf(c) >= 0) { value += 6; continue; }
 		}
 
 		return value % 99;
@@ -183,7 +190,7 @@ export class Phext {
 		var phokens = this.phokenize(phext);
 
 		for (var i = 0; i < phokens.length; ++i) {
-		  phokens[i].scroll = soundex_internal(phokens[i].scroll);
+		  phokens[i].scroll = this.soundex_internal(phokens[i].scroll);
 		}
 
 		return this.dephokenize(phokens);
@@ -206,7 +213,7 @@ export class Phext {
 		  while (coord.x.section < reference.x.section) { coord.section_break(); offset += 1; }
 		  while (coord.x.scroll < reference.x.scroll) { coord.scroll_break(); offset += 1; }
 
-		  output[i] = new PositionedScroll(coord, offset);
+		  output.push(new PositionedScroll(coord, offset));
 		  offset += phokens[i].scroll.length;
 		  ++i;
 		}
@@ -215,12 +222,12 @@ export class Phext {
 	};
 
 	index = (phext) => {
-		var output = index_phokens(phext);
+		var output = this.index_phokens(phext);
 		return this.dephokenize(output);
 	};
 
 	offset = (phext, coord) => {
-		var output = index_phokens(phext);
+		var output = this.index_phokens(phext);
 
 		var best = new Coordinate();
 		var matched = false;
@@ -405,7 +412,7 @@ export class Phext {
 		for (var i = 0; i < phokens.length; ++i)
 		{
 			var ph = phokens[i];
-			if (ph.scroll.length > 0) {
+			if (ph.scroll && ph.scroll.length > 0) {
 				result += coord.advance_to(ph.coord);
 				result += ph.scroll;
 			}

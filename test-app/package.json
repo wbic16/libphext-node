@@ -10,6 +10,8 @@
   "license": "MIT",
   "description": "",
   "dependencies": {
-    "@libphext/core-js": "file:.."
+    "@libphext/core-js": "file:..",
+    "buffer": "^6.0.3",
+    "xxh3-ts": "^1.0.6"
   }
 }
