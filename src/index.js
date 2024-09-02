@@ -106,7 +106,6 @@ export class Phext {
   		}
 
   		if (stage == 1 && walker.equals(target)) {
-			//console.log(`end2: ${end} => ${max} (${insertion.to_string()})`);
 			end = max;
 			insertion = walker;
     		stage = 2;
@@ -114,7 +113,6 @@ export class Phext {
 
   		if (stage == 0) {
     		start = max;
-			//console.log(`end3: ${end} => ${max} (${insertion.to_string()})`);
     		end = max;
 			insertion = walker;
   		}
@@ -129,13 +127,38 @@ export class Phext {
 	};
 
 	create_summary = (phext) => {
-		// stub - see lines 382-402 in phext.rs
-		return '';
+  		var limit = 32;
+		if (phext.length == 0) { return "No Summary"; }
+
+		const parts = this.phokenize(phext);
+		const text = parts[0].scroll.split('\n')[0];
+		if (text.length < 32) { limit = text.length; }
+		var result = text.substr(0, limit);
+		if (result.length < phext.length) {
+			result += "...";
+		}
+		return result;
 	};
 
 	navmap = (urlbase, phext) => {
-		// stub - see lines 407-420 in phext.rs
-		return '';
+		const phokens = this.phokenize(phext);
+		var result = "";
+		const max = phokens.length;
+		if (max > 0) {
+			result += "<ul>\n";
+	   	}
+		for (var i = 0; i < max; ++i) {
+			const phoken = phokens[i];
+			const urle = phoken.coord.to_urlencoded();
+			const address = phoken.coord.to_string();
+			const summary = this.create_summary(phoken.scroll);
+			result += `<li><a href=\"${urlbase}${urle}\">${address} ${summary}</a></li>\n`;
+		}
+  		if (max > 0) {
+    		result += "</ul>\n";
+  		}
+
+  		return result;
 	};
 
 	textmap = (phext) => {
@@ -143,7 +166,7 @@ export class Phext {
   		var result = '';
   		for (var i = 0; i < phokens.length; ++i) {
 			var phoken = phokens[i];
-    		result += `* ${phoken.coord}: ${this.create_summary(phoken.scroll)}\n`;
+    		result += `* ${phoken.coord.to_string()}: ${this.create_summary(phoken.scroll)}\n`;
   		}
 
   		return result;
@@ -202,20 +225,11 @@ export class Phext {
 		var coord = new Coordinate();
 		var output = new Array();
 		for (var i = 0; i < phokens.length; ++i) {
-		  let reference = phokens[i].coord;
-		  while (coord.z.library < reference.z.library) { coord.library_break(); offset += 1; }
-		  while (coord.z.shelf < reference.z.shelf) { coord.shelf_break(); offset += 1; }
-		  while (coord.z.series < reference.z.series) { coord.series_break(); offset += 1; }
-		  while (coord.y.collection < reference.y.collection) { coord.collection_break(); offset += 1; }
-		  while (coord.y.volume < reference.y.volume) { coord.volume_break(); offset += 1; }
-		  while (coord.y.book < reference.y.book) { coord.book_break(); offset += 1; }
-		  while (coord.x.chapter < reference.x.chapter) { coord.chapter_break(); offset += 1; }
-		  while (coord.x.section < reference.x.section) { coord.section_break(); offset += 1; }
-		  while (coord.x.scroll < reference.x.scroll) { coord.scroll_break(); offset += 1; }
-
+		  const delims = coord.advance_to(phokens[i].coord);
+		  offset += delims.length;
 		  output.push(new PositionedScroll(coord, offset));
 		  offset += phokens[i].scroll.length;
-		  ++i;
+		  console.log(`* ${phokens[i].scroll}: ${offset}`);
 		}
 
 		return output;
@@ -234,7 +248,7 @@ export class Phext {
 		var fetch_coord = coord;
 		for (var i = 0; i < output.length; ++i) {
 			var phoken = output[i];
-		 	if (phoken.coord <= coord) {
+		 	if (phoken.coord.less_than(coord) || phoken.coord.equals(coord)) {
 				best = phoken.coord;
 		  	}
 		  	if (phoken.coord == coord) {
@@ -312,7 +326,6 @@ export class Phext {
 
   		const left = buffer.substr(0, end);
   		const right = buffer.substr(end);
-		//console.log(`end: ${end}, parts: ${parts.coord.to_string()}, subspace: ${subspace_coordinate.to_string()}, location: ${location.to_string()}`);
 		const result = left + fixup + scroll + right;
 		return result;
 	};
@@ -380,12 +393,48 @@ export class Phext {
 	};
 
 	merge = (left, right) => {
+		const tl = this.phokenize(left);
+		const tr = this.phokenize(right);
+		var tli = 0;
+		var tri = 0;
+ 		const maxtl = tl.length;
+  		const maxtr = tr.length;
+  		var result = "";
+  		var coord = new Coordinate();
+
+  		while (true) {
+    		const have_left = tli < maxtl;
+    		const have_right = tri < maxtr;
+    
+			const tl_lte = have_left && have_right && (tl[tli].coord.less_than(tr[tri].coord) ||
+			               tl[tli].coord.equals(tr[tri].coord));
+			const tr_lte = have_left && have_right && (tr[tri].coord.less_than(tl[tli].coord) ||
+			               tr[tri].coord.equals(tl[tli].coord));
+
+    		const pick_left = have_left && (have_right == false || tl_lte);
+    		const pick_right = have_right && (have_left == false || tr_lte);
+
+    		if (pick_left) {
+      			result += this.append_scroll(tl[tli], coord);
+      			coord = new Coordinate(tl[tli].coord.to_string());
+      			++tli;
+    		}
+    		if (pick_right) {
+      			result += this.append_scroll(tr[tri], coord);				
+      			coord = new Coordinate(tr[tri].coord.to_string());
+    			++tri;
+    		}
+
+    		if (pick_left == false && pick_right == false) {
+    			break;
+    		}
+  		}
+
+  		return result;
 	};
 
 	fetch = (phext, target) => {
   		var parts = this.get_subspace_coordinates(phext, target);
-		//console.log(`parts: ${parts.start}, ${parts.end}, ${parts.coord.to_string()}.`);
-		//console.log(`phext: ${phext.length}`);
   		var start = parts.start;
   		var end = parts.end;
 
@@ -393,7 +442,6 @@ export class Phext {
   		{
     		var glyphs = end - start;
 			var result = phext.substr(start, glyphs);
-			//console.log(`return: '${result}'.`);
 			return result;
   		}
 
@@ -401,9 +449,47 @@ export class Phext {
 	};
 
 	expand = (phext) => {
+		var result = "";
+		for (var i = 0; i < phext.length; ++i) {
+			var next = phext[i];
+			switch (next) {
+				case this.LINE_BREAK: result += this.SCROLL_BREAK; break;
+				case this.SCROLL_BREAK: result += this.SECTION_BREAK; break;
+				case this.SECTION_BREAK: result += this.CHAPTER_BREAK; break;
+				case this.CHAPTER_BREAK: result += this.BOOK_BREAK; break;
+				case this.BOOK_BREAK: result += this.VOLUME_BREAK; break;
+				case this.VOLUME_BREAK: result += this.COLLECTION_BREAK; break;
+				case this.COLLECTION_BREAK: result += this.SERIES_BREAK; break;
+				case this.SERIES_BREAK: result += this.SHELF_BREAK; break;
+				case this.SHELF_BREAK: result += this.LIBRARY_BREAK; break;
+				default: result += phext[i]; break;
+				// nop: phext.LIBRARY_BREAK
+			}
+		}		
+		return result;
 	};
 
 	contract = (phext) => {
+		var result = "";
+		for (var i = 0; i < phext.length; ++i) {
+			var next = phext[i];
+			switch (next)
+			{
+				// nop: case phext.LINE_BREAK
+				case this.SCROLL_BREAK: result += this.LINE_BREAK; break;
+				case this.SECTION_BREAK: result += this.SCROLL_BREAK; break;
+				case this.CHAPTER_BREAK: result += this.SECTION_BREAK; break;
+				case this.BOOK_BREAK: result += this.CHAPTER_BREAK; break;
+				case this.VOLUME_BREAK: result += this.BOOK_BREAK; break;
+				case this.COLLECTION_BREAK: result += this.VOLUME_BREAK; break;
+				case this.SERIES_BREAK: result += this.COLLECTION_BREAK; break;
+				case this.SHELF_BREAK: result += this.SERIES_BREAK; break;
+				case this.LIBRARY_BREAK: result += this.SHELF_BREAK; break;
+				default: result += phext[i]; break;
+			}
+		}
+		
+		return result;
 	};
 
 	dephokenize = (phokens) => {
@@ -421,9 +507,41 @@ export class Phext {
 	};
 
 	append_scroll = (token, coord) => {
+		var output = coord.advance_to(token.coord);
+		output += token.scroll;
+  		return output;
 	};
 
 	subtract = (left, right) => {
+		const pl = this.phokenize(left);
+  		const pr = this.phokenize(right);
+  		var result = "";
+  		var pri = 0;
+  		const max = pr.length;
+		var coord = new Coordinate();
+  		for (var i = 0; i < pl.length; ++i) {
+			var token = pl[i];
+    		var do_append = false;
+    		if (pri == max) {
+      			do_append = true;
+    		}
+
+    		if (pri < max) {
+      			let compare = pr[pri];
+      			if (token.coord.less_than(compare.coord)) {
+        			do_append = true;
+      			} else if (token.coord.equals(compare.coord)) {
+        			++pri;
+      			}
+    		}
+
+    		if (do_append) {
+      			result += this.append_scroll(token, coord);
+      			coord.advance_to(token.coord);
+    		}
+  		}
+
+  		return result;
 	};
 
 	is_phext_break = (byte) => {

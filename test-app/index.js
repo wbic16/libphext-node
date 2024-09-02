@@ -645,7 +645,7 @@ class Tests {
         for (var i = 0; i < expected1.length; ++i)
         {
             assert_eq(`PH1.2-${i}`, update1[i].scroll, expected1[i].scroll, `Contents 1-${i}`);
-            assert_eq(`PH1.3-${i}`, update1[i].coord, expected1[i].coord, `Coordinates 1-${i}`);
+            assert_eq(`PH1.3-${i}`, update1[i].coord.to_string(), expected1[i].coord.to_string(), `Coordinates 1-${i}`);
         }
 
         const doc2 = "one\x01two\x1Fthree\x1Efour\x1Dfive\x1Csix\x1Aseven\x19eight\x18nine\x17ten";
@@ -665,7 +665,7 @@ class Tests {
         for (var i = 0; i < expected2.length; ++i)
         {
             assert_eq("PH2.2", update2[i].scroll, expected2[i].scroll, "Contents 2");
-            assert_eq("PH2.3", update2[i].coord, expected2[i].coord, "Coordinates 2");
+            assert_eq("PH2.3", update2[i].coord.to_string(), expected2[i].coord.to_string(), "Coordinates 2");
         }
 
         const doc3 = "one\x17two\x18three\x19four\x1afive\x1csix\x1dseven\x1eeight\x1fnine\x01ten";
@@ -681,22 +681,22 @@ class Tests {
         expected3.push(phext.create_positioned_scroll(phext.to_coordinate("1.2.1/1.1.1/1.1.1"), "nine"));
         expected3.push(phext.create_positioned_scroll(phext.to_coordinate("2.1.1/1.1.1/1.1.1"), "ten"));
         var update3 = phext.phokenize(doc3);
-        assert_eq("PH3.1", update3, expected3, "Positioned Scroll 3");
+        assert_eq("PH3.1", update3.length, expected3.length, "Positioned Scroll 3");
         for (var i = 0; i < expected3.length; ++i)
         {
             assert_eq("PH3.2", update3[i].scroll, expected3[i].scroll, "Contents 3");
-            assert_eq("PH3.3", update3[i].coord, expected3[i].coord, "Coordinates 3");
+            assert_eq("PH3.3", update3[i].coord.to_string(), expected3[i].coord.to_string(), "Coordinates 3");
         }
 
         const doc4 = "\x1A\x1C\x1D\x1E\x1F\x01stuff here";
         var expected4 = new Array();
         expected4.push(phext.create_positioned_scroll(phext.to_coordinate("2.1.1/1.1.1/1.1.1"), "stuff here"));
         const update4 = phext.phokenize(doc4);
-        assert_eq("PH4.1", update4, expected4, "Positioned Scroll 4");
+        assert_eq("PH4.1", update4.length, expected4.length, "Positioned Scroll 4");
         for (var i = 0; i < expected4.length; ++i)
         {
             assert_eq("PH4.2", update4[i].scroll, expected4[i].scroll, "Contents 4");
-            assert_eq("PH4.3", update4[i].coord, expected4[i].coord, "Coordinates 4");
+            assert_eq("PH4.3", update4[i].coord.to_string(), expected4[i].coord.to_string(), "Coordinates 4");
         }
     };
 
