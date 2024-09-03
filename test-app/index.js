@@ -1,4 +1,4 @@
-const { Phext, Coordinate } = require("@libphext/core-js");
+const { Phext, Coordinate } = require("libphext");
 const fs = require('node:fs');
 
 const phext = new Phext("hello world");
