@@ -10,7 +10,7 @@
   "license": "MIT",
   "description": "",
   "dependencies": {
-    "@libphext/core-js": "file:..",
+    "libphext": "^0.1.7",
     "buffer": "^6.0.3",
     "xxhash-addon": "^2.0.3"
   }

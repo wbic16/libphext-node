@@ -1,5 +1,5 @@
 {
-  "name": "@libphext/core-js",
+  "name": "libphext",
   "version": "0.1.7",
   "description": "the fork of libphext for node",
   "source": "src/index.js",
