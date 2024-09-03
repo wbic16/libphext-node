@@ -899,6 +899,10 @@ class Tests {
         const example = "first scroll\x17second scroll\x18second section\x19second chapter\x1Abook 2\x1Cvolume 2\x1Dcollection 2\x1Eseries 2\x1Fshelf 2\x01library 2";
         const result = phext.manifest(example);
 
+        const scroll0 = "00000000000000000000";
+        const hash0 = phext.checksum(scroll0);
+        assert_eq("SM0", hash0, "7e79edd92a62a048e1cd24ffab542e34", "hash verification");
+
         const scroll1 = "first scroll";
         const hash1 = phext.checksum(scroll1);
         assert_eq("SM1", hash1, "ba9d944e4967e29d48bae69ac2999699", "hash verification");
@@ -917,7 +921,7 @@ class Tests {
 
         const scroll5 = "book 2";
         const hash5 = phext.checksum(scroll5);
-        assert_eq("SM5", hash5, "f20f79bf36f63e8fba25cc6765e2d0d", "hash verification");
+        assert_eq("SM5", hash5, "0f20f79bf36f63e8fba25cc6765e2d0d", "hash verification");
 
         const scroll6 = "volume 2";
         const hash6 = phext.checksum(scroll6);
@@ -929,7 +933,7 @@ class Tests {
 
         const scroll8 = "series 2";
         const hash8 = phext.checksum(scroll8);
-        assert_eq("SM8", hash8, "f35100c84df601a490b7b63d7e8c0a8", "hash verification");
+        assert_eq("SM8", hash8, "0f35100c84df601a490b7b63d7e8c0a8", "hash verification");
 
         const scroll9 = "shelf 2";
         const hash9 = phext.checksum(scroll9);
@@ -944,6 +948,30 @@ class Tests {
     };
 
     test_phext_soundex_v1 = () => {
+        const letters1 = "bpfv";
+        const precheck1 = phext.soundex_internal(letters1);
+        assert_eq("PSP1", precheck1, 5, "1 + the 1-values");
+
+		const letters2 = "cskgjqxz";
+        const precheck2 = phext.soundex_internal(letters2);
+        assert_eq("PSP2", precheck2, 17, "1 + the 2-values");
+
+		const letters3 = "dt";
+        const precheck3 = phext.soundex_internal(letters3);
+        assert_eq("PSP3", precheck3, 7, "1 + the 3-values");
+
+		const letters4 = "l";
+        const precheck4 = phext.soundex_internal(letters4);
+        assert_eq("PSP4", precheck4, 5, "1 + the 4-values");
+
+		const letters5 = "mn";
+        const precheck5 = phext.soundex_internal(letters5);
+        assert_eq("PSP5", precheck5, 11, "1 + the 5-values");
+
+		const letters6 = "r";
+        const precheck6 = phext.soundex_internal(letters6);
+        assert_eq("PSP6", precheck6, 7, "1 + the 6-values");
+        
         const sample = "it was the best of scrolls\x17it was the worst of scrolls\x17aaa\x17bbb\x17ccc\x17ddd\x17eee\x17fff\x17ggg\x17hhh\x17iii\x17jjj\x17kkk\x17lll\x18mmm\x18nnn\x18ooo\x18ppp\x19qqq\x19rrr\x19sss\x19ttt\x1auuu\x1avvv\x1awww\x1axxx\x1ayyy\x1azzz";
         const result = phext.soundex_v1(sample);
         assert_eq("PSV1", result, "36\x1741\x171\x174\x177\x1710\x171\x174\x177\x171\x171\x177\x177\x1713\x1816\x1816\x181\x184\x197\x1919\x197\x1910\x1a1\x1a4\x1a1\x1a7\x1a1\x1a7", "Soundex");

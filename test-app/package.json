@@ -12,6 +12,6 @@
   "dependencies": {
     "@libphext/core-js": "file:..",
     "buffer": "^6.0.3",
-    "xxh3-ts": "^1.0.6"
+    "xxhash-addon": "^2.0.3"
   }
 }

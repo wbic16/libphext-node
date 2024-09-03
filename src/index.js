@@ -7,8 +7,8 @@
 // This project was ported from https://github.com/wbic16/libphext-rs/blob/master/src/phext.rs.
 // Web Site: https://phext.io/
 // -----------------------------------------------------------------------------------------------------------
-const { Buffer } = require('buffer');
-const { XXH3_128 } = require('xxh3-ts');
+const { Buffer } = require('node:buffer');
+const { XXHash, XXHash32, XXHash64, XXHash3, XXHash128 } = require('xxhash-addon');
 
 export class Phext {
 	constructor(subspace) {
@@ -173,15 +173,14 @@ export class Phext {
 	};
 
 	checksum = (phext) => {
-		var hash = XXH3_128(Buffer.from(phext));
-		return hash;
+		var hash = XXHash128.hash(Buffer.from(phext));
+		return hash.toString('hex').padStart(32, '0');
 	};
 
 	manifest = (phext) => {
 		var phokens = this.phokenize(phext);
 		for (var i = 0; i < phokens.length; ++i) {
-		  phokens[i].scroll = this.checksum(phokens[i].scroll);
-		  ++i;
+			phokens[i].scroll = this.checksum(phokens[i].scroll);
 		}
 
 		return this.dephokenize(phokens);
@@ -212,11 +211,15 @@ export class Phext {
 	soundex_v1 = (phext) => {
 		var phokens = this.phokenize(phext);
 
+		var result = "";
+		var coord = new Coordinate();
 		for (var i = 0; i < phokens.length; ++i) {
-		  phokens[i].scroll = this.soundex_internal(phokens[i].scroll);
+			const soundex = this.soundex_internal(phokens[i].scroll);
+			result += coord.advance_to(phokens[i].coord);
+			result += soundex;
 		}
 
-		return this.dephokenize(phokens);
+		return result;
 	};
 
 	index_phokens = (phext) => {
@@ -227,9 +230,8 @@ export class Phext {
 		for (var i = 0; i < phokens.length; ++i) {
 		  const delims = coord.advance_to(phokens[i].coord);
 		  offset += delims.length;
-		  output.push(new PositionedScroll(coord, offset));
+		  output.push(new PositionedScroll(new Coordinate(coord.to_string()), `${offset}`));
 		  offset += phokens[i].scroll.length;
-		  console.log(`* ${phokens[i].scroll}: ${offset}`);
 		}
 
 		return output;
