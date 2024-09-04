@@ -1,11 +1,12 @@
 {
   "name": "libphext",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "the fork of libphext for node",
   "source": "src/index.ts",
   "main": "dist/index.js",
   "module": "dist/module.js",
   "types": "dist/index.d.ts",
+  "files": [ "dist", "tsconfig.json", "package.json" ],
   "scripts": {
     "watch": "parcel watch",
     "build": "parcel build",
@@ -35,6 +36,7 @@
     "@parcel/transformer-typescript-types": "^2.8.3",
     "@types/node": "^22.5.3",
     "parcel": "2.8.3",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "xxhash-addon": "^2.0.3"
   }
 }
