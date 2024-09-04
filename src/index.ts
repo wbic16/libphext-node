@@ -7,13 +7,27 @@
 // This project was ported from https://github.com/wbic16/libphext-rs/blob/master/src/phext.rs.
 // Web Site: https://phext.io/
 // -----------------------------------------------------------------------------------------------------------
-const { Buffer } = require('node:buffer');
-const { XXHash, XXHash32, XXHash64, XXHash3, XXHash128 } = require('xxhash-addon');
+import { Buffer } from 'buffer';
+import { XXHash, XXHash32, XXHash64, XXHash3, XXHash128 } from 'xxhash-addon';
 
 export class Phext {
-	constructor(subspace) {
-		this.subspace = subspace;
-		this.state = 'unparsed';
+	COORDINATE_MINIMUM: number;
+	COORDINATE_MAXIMUM: number;
+	LIBRARY_BREAK: string;
+	MORE_COWBELL: string;
+	LINE_BREAK: string;
+	SCROLL_BREAK: string;
+	SECTION_BREAK: string;
+	CHAPTER_BREAK: string;
+	BOOK_BREAK: string;
+	VOLUME_BREAK: string;
+	COLLECTION_BREAK: string;
+	SERIES_BREAK: string;
+	SHELF_BREAK: string;
+	ADDRESS_MICRO_BREAK: string;
+	ADDRESS_MACRO_BREAK: string;
+	ADDRESS_MACRO_ALT: string;
+	constructor() {
 		this.COORDINATE_MINIMUM = 1;
 		this.COORDINATE_MAXIMUM = 100;
         this.LIBRARY_BREAK       = '\x01'; // 11D Break - replaces start of header
@@ -31,21 +45,20 @@ export class Phext {
         this.ADDRESS_MACRO_BREAK = '/'; // delimiter for macro-coordinates
         this.ADDRESS_MACRO_ALT   = ';';   // also allow ';' for url encoding
 	}
-	
-	status = () => {
-		console.log(`Length: ${this.subspace.length}`);
-		console.log(`state: ${this.state}`);
-	};
 
-	create_range(start, end) {
+	create_range = (start: Coordinate, end: Coordinate): Range => {
 		return new Range(start, end);
 	};
 
-	create_positioned_scroll(coord, scroll, next, remaining) {
-		return new PositionedScroll(coord, scroll, next, remaining);
+	default_coordinate = (): Coordinate => {
+		return new Coordinate();
 	}
 
-	check_for_cowbell(phext) {
+	create_positioned_scroll = (coord: Coordinate, scroll: string, next: string = "", remaining: string = ""): PositionedScroll => {
+		return new PositionedScroll(coord, scroll, new Coordinate(next), remaining);
+	}
+
+	check_for_cowbell = (phext: string): boolean => {
 		for (var i = 0; i < phext.length; ++i) {
 			if (phext[i] == this.MORE_COWBELL) {
 				return true;
@@ -55,7 +68,7 @@ export class Phext {
 	  	return false;
 	};
 
-	get_subspace_coordinates = (subspace, target) => {
+	get_subspace_coordinates = (subspace: string, target: Coordinate): OffsetsAndCoordinate => {
 		var walker = new Coordinate();
   		var fallback = new Coordinate();
 		var insertion = new Coordinate();
@@ -121,26 +134,26 @@ export class Phext {
 		return result;
 	};
 
-	remove = (phext, location) => {
+	remove = (phext: string, location: Coordinate): string => {
 		var phase1 = this.replace(phext, location, "");
   		return this.normalize(phase1);
 	};
 
-	create_summary = (phext) => {
+	create_summary = (phext: string): string => {
   		var limit = 32;
 		if (phext.length == 0) { return "No Summary"; }
 
 		const parts = this.phokenize(phext);
 		const text = parts[0].scroll.split('\n')[0];
 		if (text.length < 32) { limit = text.length; }
-		var result = text.substr(0, limit);
+		var result = text.substring(0, limit);
 		if (result.length < phext.length) {
 			result += "...";
 		}
 		return result;
 	};
 
-	navmap = (urlbase, phext) => {
+	navmap = (urlbase: string, phext: string): string => {
 		const phokens = this.phokenize(phext);
 		var result = "";
 		const max = phokens.length;
@@ -161,7 +174,7 @@ export class Phext {
   		return result;
 	};
 
-	textmap = (phext) => {
+	textmap = (phext: string): string => {
 		var phokens = this.phokenize(phext);
   		var result = '';
   		for (var i = 0; i < phokens.length; ++i) {
@@ -172,12 +185,12 @@ export class Phext {
   		return result;
 	};
 
-	checksum = (phext) => {
+	checksum = (phext: string): string => {
 		var hash = XXHash128.hash(Buffer.from(phext));
 		return hash.toString('hex').padStart(32, '0');
 	};
 
-	manifest = (phext) => {
+	manifest = (phext: string): string => {
 		var phokens = this.phokenize(phext);
 		for (var i = 0; i < phokens.length; ++i) {
 			phokens[i].scroll = this.checksum(phokens[i].scroll);
@@ -186,7 +199,7 @@ export class Phext {
 		return this.dephokenize(phokens);
 	};
 
-	soundex_internal = (buffer) => {
+	soundex_internal = (buffer: string): number => {
 		var letter1 = "bpfv";
 		var letter2 = "cskgjqxz";
 		var letter3 = "dt";
@@ -208,7 +221,7 @@ export class Phext {
 		return value % 99;
 	};
 
-	soundex_v1 = (phext) => {
+	soundex_v1 = (phext: string): string => {
 		var phokens = this.phokenize(phext);
 
 		var result = "";
@@ -222,7 +235,7 @@ export class Phext {
 		return result;
 	};
 
-	index_phokens = (phext) => {
+	index_phokens = (phext: string): Array<PositionedScroll> => {
 		var phokens = this.phokenize(phext);
 		var offset = 0;
 		var coord = new Coordinate();
@@ -230,19 +243,20 @@ export class Phext {
 		for (var i = 0; i < phokens.length; ++i) {
 		  const delims = coord.advance_to(phokens[i].coord);
 		  offset += delims.length;
-		  output.push(new PositionedScroll(new Coordinate(coord.to_string()), `${offset}`));
+		  const new_coord = new Coordinate(coord.to_string());
+		  output.push(new PositionedScroll(new_coord, `${offset}`, new_coord, ""));
 		  offset += phokens[i].scroll.length;
 		}
 
 		return output;
 	};
 
-	index = (phext) => {
+	index = (phext: string): string => {
 		var output = this.index_phokens(phext);
 		return this.dephokenize(output);
 	};
 
-	offset = (phext, coord) => {
+	offset = (phext: string, coord: Coordinate): number => {
 		var output = this.index_phokens(phext);
 
 		var best = new Coordinate();
@@ -266,7 +280,7 @@ export class Phext {
 		return parseInt(this.fetch(index, fetch_coord));
 	};
 
-	replace = (phext, location, scroll) => {
+	replace = (phext: string, location: Coordinate, scroll: string): string => {
 		const phokens = this.phokenize(phext);
 		var coord = new Coordinate();
 		var result = "";
@@ -305,20 +319,20 @@ export class Phext {
 		return result;
 	};
 
-	range_replace = (phext, location, scroll) => {
+	range_replace = (phext: string, location: Range, scroll: string): string => {
   		var parts_start = this.get_subspace_coordinates(phext, location.start);
   		var parts_end = this.get_subspace_coordinates(phext, location.end);
   		var start = parts_start.start;
   		var end = parts_end.end;
 		const max = phext.length;
 		if (end > max) { end = max; }
-		const left = phext.substr(0, start);
-		const right = phext.substr(end);
+		const left = phext.substring(0, start);
+		const right = phext.substring(end);
 		const result = left + scroll + right;
 		return result;
 	};
 
-	insert = (buffer, location, scroll) => {
+	insert = (buffer: string, location: Coordinate, scroll: string): string => {
   		var parts = this.get_subspace_coordinates(buffer, location);
   		const end = parts.end;
   		var fixup = "";
@@ -326,13 +340,13 @@ export class Phext {
 
 		fixup += subspace_coordinate.advance_to(location);
 
-  		const left = buffer.substr(0, end);
-  		const right = buffer.substr(end);
+  		const left = buffer.substring(0, end);
+  		const right = buffer.substring(end);
 		const result = left + fixup + scroll + right;
 		return result;
 	};
 
-	next_scroll = (phext, start) => {
+	next_scroll = (phext: string, start: Coordinate): PositionedScroll => {
 		var location = start;
   		var output = "";
   		var remaining = "";
@@ -365,14 +379,14 @@ export class Phext {
   		}
 
 		if (pi < pmax) {
-			remaining = phext.substr(pi);
+			remaining = phext.substring(pi);
 		}
 
   		const out_scroll = new PositionedScroll(begin, output, location, remaining);
   		return out_scroll;
 	};
 
-	phokenize = (phext) => {
+	phokenize = (phext: string): Array<PositionedScroll> => {
 		var result = Array();
   		var coord = new Coordinate();
 		
@@ -394,7 +408,7 @@ export class Phext {
   		return result;
 	};
 
-	merge = (left, right) => {
+	merge = (left: string, right: string): string => {
 		const tl = this.phokenize(left);
 		const tr = this.phokenize(right);
 		var tli = 0;
@@ -435,22 +449,21 @@ export class Phext {
   		return result;
 	};
 
-	fetch = (phext, target) => {
+	fetch = (phext: string, target: Coordinate): string => {
   		var parts = this.get_subspace_coordinates(phext, target);
   		var start = parts.start;
   		var end = parts.end;
 
   		if (end > start)
   		{
-    		var glyphs = end - start;
-			var result = phext.substr(start, glyphs);
+			var result = phext.substring(start, end);
 			return result;
   		}
 
   		return "";
 	};
 
-	expand = (phext) => {
+	expand = (phext: string): string => {
 		var result = "";
 		for (var i = 0; i < phext.length; ++i) {
 			var next = phext[i];
@@ -471,7 +484,7 @@ export class Phext {
 		return result;
 	};
 
-	contract = (phext) => {
+	contract = (phext: string): string => {
 		var result = "";
 		for (var i = 0; i < phext.length; ++i) {
 			var next = phext[i];
@@ -494,7 +507,7 @@ export class Phext {
 		return result;
 	};
 
-	dephokenize = (phokens) => {
+	dephokenize = (phokens: Array<PositionedScroll>): string => {
 		var result = "";
   		var coord = new Coordinate();
 		for (var i = 0; i < phokens.length; ++i)
@@ -508,13 +521,13 @@ export class Phext {
   		return result;
 	};
 
-	append_scroll = (token, coord) => {
+	append_scroll = (token: PositionedScroll, coord: Coordinate): string => {
 		var output = coord.advance_to(token.coord);
 		output += token.scroll;
   		return output;
 	};
 
-	subtract = (left, right) => {
+	subtract = (left: string, right: string): string => {
 		const pl = this.phokenize(left);
   		const pr = this.phokenize(right);
   		var result = "";
@@ -546,7 +559,7 @@ export class Phext {
   		return result;
 	};
 
-	is_phext_break = (byte) => {
+	is_phext_break = (byte: string): boolean => {
 		return byte == this.LINE_BREAK ||
 				byte == this.SCROLL_BREAK ||
 				byte == this.SECTION_BREAK ||
@@ -559,12 +572,12 @@ export class Phext {
 				byte == this.LIBRARY_BREAK;
 	};
 
-	normalize = (phext) => {
+	normalize = (phext: string): string => {
 		var arr = this.phokenize(phext);
 		return this.dephokenize(arr);
 	};
 
-	to_coordinate = (address) => {
+	to_coordinate = (address: string): Coordinate => {
 		var result = new Coordinate();
 		var index = 0;
 		var value = 0;
@@ -576,14 +589,14 @@ export class Phext {
 				byte == this.ADDRESS_MACRO_BREAK ||
 				byte == this.ADDRESS_MACRO_ALT) {
 				switch (index) {
-				  case 1: result.z.library = parseInt(value); index += 1; break;
-				  case 2: result.z.shelf = parseInt(value); index += 1; break;
-				  case 3: result.z.series = parseInt(value); index += 1; break;
-				  case 4: result.y.collection = parseInt(value); index += 1; break;
-				  case 5: result.y.volume = parseInt(value); index += 1; break;
-				  case 6: result.y.book = parseInt(value); index += 1; break;
-				  case 7: result.x.chapter = parseInt(value); index += 1; break;
-				  case 8: result.x.section = parseInt(value); index += 1; break;
+				  case 1: result.z.library = value; index += 1; break;
+				  case 2: result.z.shelf = value; index += 1; break;
+				  case 3: result.z.series = value; index += 1; break;
+				  case 4: result.y.collection = value; index += 1; break;
+				  case 5: result.y.volume = value; index += 1; break;
+				  case 6: result.y.book = value; index += 1; break;
+				  case 7: result.x.chapter = value; index += 1; break;
+				  case 8: result.x.section = value; index += 1; break;
 				}
 				value = 0;
 			}
@@ -604,24 +617,28 @@ export class Phext {
 }
 
 export class Coordinate {
-	constructor(value) {
+	z: ZCoordinate;
+	y: YCoordinate;
+	x: XCoordinate;
+	constructor(value: string = "") {
 		this.z = new ZCoordinate(1,1,1);
 		this.y = new YCoordinate(1,1,1);
 		this.x = new XCoordinate(1,1,1);
-		value = "" + value;
-		var parts = value.replace(/\//g, '.').split('.');
-		if (parts.length >= 1) { this.z.library = parseInt(parts[0]); if (isNaN(this.z.library)) { this.z.library = 1; }}
-		if (parts.length >= 2) { this.z.shelf = parseInt(parts[1]); if (isNaN(this.z.shelf)) { this.z.shelf = 1; }}
-		if (parts.length >= 3) { this.z.series = parseInt(parts[2]); if (isNaN(this.z.series)) { this.z.series = 1; }}
-		if (parts.length >= 4) { this.y.collection = parseInt(parts[3]); if (isNaN(this.y.collection)) { this.z.collection = 1; }}
-		if (parts.length >= 5) { this.y.volume = parseInt(parts[4]); if (isNaN(this.y.volume)) { this.y.volume = 1; }}
-		if (parts.length >= 6) { this.y.book = parseInt(parts[5]); if (isNaN(this.y.book)) { this.y.book = 1; }}
-		if (parts.length >= 7) { this.x.chapter = parseInt(parts[6]); if (isNaN(this.x.chapter)) { this.x.chapter = 1; }}
-		if (parts.length >= 8) { this.x.section = parseInt(parts[7]); if (isNaN(this.x.section)) { this.x.section = 1; }}
-		if (parts.length >= 9) { this.x.scroll = parseInt(parts[8]); if (isNaN(this.x.scroll)) { this.x.scroll = 1; }}
+		if (value.length > 0) {
+			var parts = value.replace(/\//g, '.').split('.');
+			if (parts.length >= 1) { this.z.library = parseInt(parts[0]); if (this.z.library < 1) { this.z.library = 1; }}
+			if (parts.length >= 2) { this.z.shelf = parseInt(parts[1]); if (this.z.shelf < 1) { this.z.shelf = 1; }}
+			if (parts.length >= 3) { this.z.series = parseInt(parts[2]); if (this.z.series < 1) { this.z.series = 1; }}
+			if (parts.length >= 4) { this.y.collection = parseInt(parts[3]); if (this.y.collection < 1) { this.y.collection = 1; }}
+			if (parts.length >= 5) { this.y.volume = parseInt(parts[4]); if (this.y.volume < 1) { this.y.volume = 1; }}
+			if (parts.length >= 6) { this.y.book = parseInt(parts[5]); if (this.y.book < 1) { this.y.book = 1; }}
+			if (parts.length >= 7) { this.x.chapter = parseInt(parts[6]); if (this.x.chapter < 1) { this.x.chapter = 1; }}
+			if (parts.length >= 8) { this.x.section = parseInt(parts[7]); if (this.x.section < 1) { this.x.section = 1; }}
+			if (parts.length >= 9) { this.x.scroll = parseInt(parts[8]); if (this.x.scroll < 1) { this.x.scroll = 1; }}
+		}
 	}
 
-	equals = (other) => {
+	equals = (other: Coordinate): boolean => {
 		return this.z.library == other.z.library &&
 		       this.z.shelf == other.z.shelf &&
 			   this.z.series == other.z.series &&
@@ -633,7 +650,7 @@ export class Coordinate {
 			   this.x.scroll == other.x.scroll;
 	};
 
-	less_than = (other) => {
+	less_than = (other: Coordinate): boolean => {
 		if (this.z.library < other.z.library) { return true; }
 		if (this.z.library > other.z.library) { return false; }
 		if (this.z.shelf < other.z.shelf) { return true; }
@@ -654,7 +671,7 @@ export class Coordinate {
 		return false;
 	};
 
-	greater_than = (other) => {
+	greater_than = (other: Coordinate): boolean => {
 		if (this.z.library > other.z.library) { return true; }
 		if (this.z.library < other.z.library) { return false; }
 		if (this.z.shelf > other.z.shelf) { return true; }
@@ -675,7 +692,7 @@ export class Coordinate {
 		return false;
 	};
 
-	advance_to = (other) => {
+	advance_to = (other: Coordinate): string => {
 		var output = "";
 		while (this.less_than(other)) {
 			if (this.z.library < other.z.library)       { output += __internal_phext.LIBRARY_BREAK;    this.library_break();    continue; }
@@ -691,11 +708,11 @@ export class Coordinate {
 		return output;
 	};
 
-	validate_index = (index) => {
+	validate_index = (index: number): boolean => {
 		return index >= __internal_phext.COORDINATE_MINIMUM && index <= __internal_phext.COORDINATE_MAXIMUM;
   	};
 
-	validate_coordinate = () => {
+	validate_coordinate = (): boolean => {
 		let ok = this.validate_index(this.z.library) &&
 				 this.validate_index(this.z.shelf) &&
 			     this.validate_index(this.z.series) &&
@@ -708,15 +725,15 @@ export class Coordinate {
 		return ok;
 	};
 
-	to_string = () => {
+	to_string = (): string => {
 		return `${this.z.library}.${this.z.shelf}.${this.z.series}/${this.y.collection}.${this.y.volume}.${this.y.book}/${this.x.chapter}.${this.x.section}.${this.x.scroll}`;
 	};
 
-	to_urlencoded = () => {
+	to_urlencoded = (): string => {
 		return this.to_string().replace(/\//g, ';');
 	}
 
-	advance_coordinate = (index) => {
+	advance_coordinate = (index: number): number => {
 		var next = index + 1;
 		if (next < __internal_phext.COORDINATE_MAXIMUM) {
 			return next;
@@ -725,49 +742,49 @@ export class Coordinate {
 		return index;
 	};
 
-	library_break = () => {
+	library_break = (): void => {
 		this.z.library = this.advance_coordinate(this.z.library);
 		this.z.shelf = 1;
 		this.z.series = 1;
 		this.y = new YCoordinate();
 		this.x = new XCoordinate();
 	};
-	shelf_break = () => {
+	shelf_break = (): void => {
 		this.z.shelf = this.advance_coordinate(this.z.shelf);
 		this.z.series = 1;
 		this.y = new YCoordinate();
 		this.x = new XCoordinate();
 	};
-	series_break = () => {
+	series_break = (): void => {
 		this.z.series = this.advance_coordinate(this.z.series);
 		this.y = new YCoordinate();
 		this.x = new XCoordinate();
 	};
-	collection_break = () => {
+	collection_break = (): void => {
 		this.y.collection = this.advance_coordinate(this.y.collection);
 		this.y.volume = 1;
 		this.y.book = 1;
 		this.x = new XCoordinate();
 	};
-	volume_break = () => {
+	volume_break = (): void => {
 		this.y.volume = this.advance_coordinate(this.y.volume);
 		this.y.book = 1;
 		this.x = new XCoordinate();
 	};
-	book_break = () => {
+	book_break = (): void => {
 		this.y.book = this.advance_coordinate(this.y.book);
 		this.x = new XCoordinate();
 	};
-	chapter_break = () => {
+	chapter_break = (): void => {
 		this.x.chapter = this.advance_coordinate(this.x.chapter);
 		this.x.section = 1;
 		this.x.scroll = 1;
 	};
-	section_break = () => {
+	section_break = (): void => {
 		this.x.section = this.advance_coordinate(this.x.section);
 		this.x.scroll = 1;
 	};
-	scroll_break = () => {
+	scroll_break = (): void => {
 		this.x.scroll = this.advance_coordinate(this.x.scroll);
 	};
 }
@@ -778,7 +795,11 @@ var __internal_phext = new Phext(); // for constants
 // internal classes
 
 class OffsetsAndCoordinate {
-	constructor(start, end, coord, fallback) {
+	start: number;
+	end: number;
+	coord: Coordinate;
+	fallback: Coordinate;
+	constructor(start: number, end: number, coord: Coordinate, fallback: Coordinate) {
 		this.start = start;
 		this.end = end;
 		this.coord = coord;
@@ -787,7 +808,11 @@ class OffsetsAndCoordinate {
 }
 
 class PositionedScroll {
-	constructor(coord, scroll, next, remaining) {
+	coord: Coordinate;
+	scroll: string;
+	next: Coordinate;
+	remaining: string;
+	constructor(coord: Coordinate, scroll: string, next: Coordinate, remaining: string) {
 		this.coord = coord;
 		this.scroll = scroll;
 		this.next = next;
@@ -796,32 +821,43 @@ class PositionedScroll {
 }
 
 class Range {
-	constructor(start, end) {
+	start: Coordinate;
+	end: Coordinate;
+	constructor(start: Coordinate, end: Coordinate) {
 		this.start = start;
 		this.end = end;
 	}
 }
 
 class ZCoordinate {
-	constructor(library, shelf, series) {
-		this.library = library ? parseInt(library) : 1;
-		this.shelf = shelf ? parseInt(shelf) : 1;
-		this.series = series ? parseInt(series) : 1;
+	library: number;
+	shelf: number;
+	series: number;
+	constructor(library: number = 1, shelf: number = 1, series: number = 1) {
+		this.library = library;
+		this.shelf = shelf;
+		this.series = series;
 	}
 }
 
 class YCoordinate {
-	constructor(collection, volume, book) {
-		this.collection = collection ? parseInt(collection) : 1;
-		this.volume = volume ? parseInt(volume) : 1;
-		this.book = book ? parseInt(book) : 1;
+	collection: number;
+	volume: number;
+	book: number;
+	constructor(collection: number = 1, volume: number = 1, book: number = 1) {
+		this.collection = collection;
+		this.volume = volume;
+		this.book = book;
 	}
 }
 
 class XCoordinate {
-	constructor(chapter, section, scroll) {
-		this.chapter = chapter ? parseInt(chapter) : 1;
-		this.section = section ? parseInt(section) : 1;
-		this.scroll = scroll ? parseInt(scroll) : 1;
+	chapter: number;
+	section: number;
+	scroll: number;
+	constructor(chapter: number = 1, section: number = 1, scroll: number = 1) {
+		this.chapter = chapter;
+		this.section = section;
+		this.scroll = scroll;
 	}
 }

@@ -1,0 +1,15 @@
+{
+    "compileOnSave": true,
+    "compilerOptions": {
+      "strict": true,
+      "target": "ESNext",
+      "module": "ESNext",
+      "moduleResolution": "node",
+      "allowSyntheticDefaultImports": true,
+      "esModuleInterop": true,
+      "types": [ "@types/node" ],
+      "noEmit": true,
+      "isolatedModules": true
+    },
+    "eslint.workingDirectories": [ "./src" ]
+  }

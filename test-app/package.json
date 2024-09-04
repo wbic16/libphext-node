@@ -1,9 +1,9 @@
 {
   "name": "test-app",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "index.ts",
   "scripts": {
-    "rebuild": "cd .. && npm run build && cd test-app && npm i",
+    "rebuild": "cd .. && npm run build && cd test-app && npm i ..",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Will Bickford <wbic16@gmail.com>",
@@ -11,7 +11,10 @@
   "description": "",
   "dependencies": {
     "buffer": "^6.0.3",
-    "libphext": "^0.1.7",
+    "libphext": "file:..",
     "xxhash-addon": "^2.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.3"
   }
 }
