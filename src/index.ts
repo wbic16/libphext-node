@@ -8,7 +8,7 @@
 // Web Site: https://phext.io/
 // -----------------------------------------------------------------------------------------------------------
 import { Buffer } from 'buffer';
-import { XXHash, XXHash32, XXHash64, XXHash3, XXHash128 } from 'xxhash-addon';
+import * as xxhash from 'xxh3-ts/xxh3';
 
 export class Phext {
 	COORDINATE_MINIMUM: number;
@@ -186,8 +186,9 @@ export class Phext {
 	};
 
 	checksum = (phext: string): string => {
-		var hash = XXHash128.hash(Buffer.from(phext));
-		return hash.toString('hex').padStart(32, '0');
+		const buffer = Buffer.from(phext);
+		const hash = xxhash.XXH3_128(buffer);
+		return hash.toString(16).padStart(32, '0');
 	};
 
 	manifest = (phext: string): string => {

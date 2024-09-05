@@ -12,7 +12,8 @@
   "dependencies": {
     "buffer": "^6.0.3",
     "libphext": "file:..",
-    "xxhash-addon": "^2.0.3"
+    "xxh3-ts": "^1.0.6",
+    "xxhash": "^0.3.0"
   },
   "devDependencies": {
     "@types/node": "^22.5.3"
