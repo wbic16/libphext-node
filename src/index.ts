@@ -8,7 +8,7 @@
 // Web Site: https://phext.io/
 // -----------------------------------------------------------------------------------------------------------
 import { Buffer } from 'buffer';
-import * as xxhash from 'xxh3-ts/xxh3';
+//import * as xxhash from 'xxh3-ts/xxh3';
 
 export class Phext {
 	COORDINATE_MINIMUM: number;
@@ -185,6 +185,9 @@ export class Phext {
   		return result;
 	};
 
+	// disabled for now - xxh3-ts needs to be patched for the 0.8.2 release
+	// xxhash-addon works, but fails in frontends like vite
+	/*
 	checksum = (phext: string): string => {
 		const buffer = Buffer.from(phext);
 		const hash = xxhash.XXH3_128(buffer);
@@ -198,7 +201,7 @@ export class Phext {
 		}
 
 		return this.dephokenize(phokens);
-	};
+	};*/
 
 	soundex_internal = (buffer: string): number => {
 		var letter1 = "bpfv";

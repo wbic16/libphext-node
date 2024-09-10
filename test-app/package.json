@@ -10,10 +10,7 @@
   "license": "MIT",
   "description": "",
   "dependencies": {
-    "buffer": "^6.0.3",
-    "libphext": "file:..",
-    "xxh3-ts": "^1.0.6",
-    "xxhash": "^0.3.0"
+    "libphext": "file:.."
   },
   "devDependencies": {
     "@types/node": "^22.5.3"

@@ -1,7 +1,7 @@
 {
   "name": "libphext",
-  "version": "0.1.9",
-  "description": "the fork of libphext for node",
+  "version": "0.1.10",
+  "description": "the official fork of libphext-rs v0.1.7 for node",
   "source": "src/index.ts",
   "main": "dist/index.js",
   "module": "dist/module.js",
@@ -31,9 +31,7 @@
   },
   "homepage": "https://github.com/wbic16/libphext-node#readme",
   "dependencies": {
-    "buffer": "^6.0.3",
-    "parcel": "^2.12.0",
-    "xxh3-ts": "^1.0.6"
+    "parcel": "^2.12.0"
   },
   "devDependencies": {
     "@parcel/packager-ts": "^2.8.3",
