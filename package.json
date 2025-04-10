@@ -6,6 +6,12 @@
   "main": "dist/index.js",
   "module": "dist/module.js",
   "types": "dist/index.d.ts",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/liphext.js"
+    }
+  },
   "files": [
     "dist",
     "tsconfig.json",
@@ -38,6 +44,7 @@
     "@parcel/transformer-typescript-types": "^2.8.3",
     "@types/node": "^22.5.3",
     "parcel": "2.8.3",
-    "typescript": "^5.5.4"
+    "typescript": "^5.8.3",
+    "vite": "^6.2.5"
   }
 }
