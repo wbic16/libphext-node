@@ -78,42 +78,42 @@ export class Phext {
   		var stage = 0;
   		var max = subspace.length;
 
+		// The walker only moves on a dimension break, so the stage checks below give the same answer for
+		// every code unit of a scroll. Earlier versions re-ran them (copying the walker twice through
+		// to_string/to_coordinate) for every code unit; now they run once per break. Once stage 2 is
+		// reached the result is settled, so the rest of the document is not scanned.
+		var moved = true;
   		while (subspace_index < max) {
-    		var next = subspace[subspace_index];
+			if (moved) {
+				moved = false;
 
-    		if (stage == 0) {
-      			if (walker.equals(target)) {
-        			stage = 1;
-        			start = subspace_index;
-					fallback = this.to_coordinate(walker.to_string());
-					insertion = this.to_coordinate(walker.to_string());
-      			}
-      			if (walker.less_than(target)) {
-					fallback = this.to_coordinate(walker.to_string());
-					insertion = this.to_coordinate(walker.to_string());
-      			}
-    		}
+    			if (stage == 0) {
+      				if (walker.equals(target)) {
+        				stage = 1;
+        				start = subspace_index;
+						fallback = this.to_coordinate(walker.to_string());
+						insertion = this.to_coordinate(walker.to_string());
+      				}
+      				if (walker.less_than(target)) {
+						fallback = this.to_coordinate(walker.to_string());
+						insertion = this.to_coordinate(walker.to_string());
+      				}
+    			}
 
-    		if (stage < 2 && walker.greater_than(target)) {
-				if (stage == 0) {
-        			start = subspace_index - 1;
-      			}
-				end = subspace_index - 1;
-				insertion = fallback;
-      			stage = 2;
-    		}
+    			if (stage < 2 && walker.greater_than(target)) {
+					if (stage == 0) {
+        				start = subspace_index - 1;
+      				}
+					end = subspace_index - 1;
+					insertion = fallback;
+      				stage = 2;
+					break;
+    			}
+			}
 
-    		if (this.is_phext_break(next)) {
-      			if (next == this.SCROLL_BREAK)     { walker.scroll_break();     }
-      			if (next == this.SECTION_BREAK)    { walker.section_break();    }
-      			if (next == this.CHAPTER_BREAK)    { walker.chapter_break();    }
-      			if (next == this.BOOK_BREAK)       { walker.book_break();       }
-      			if (next == this.VOLUME_BREAK)     { walker.volume_break();     }
-      			if (next == this.COLLECTION_BREAK) { walker.collection_break(); }
-      			if (next == this.SERIES_BREAK)     { walker.series_break();     }
-      			if (next == this.SHELF_BREAK)      { walker.shelf_break();      }
-      			if (next == this.LIBRARY_BREAK)    { walker.library_break();    }
-    		}
+			if (apply_break(walker, subspace.charCodeAt(subspace_index))) {
+				moved = true;
+			}
 
     		++subspace_index;
   		}
@@ -144,7 +144,9 @@ export class Phext {
 		if (phext.length == 0) { return "No Summary"; }
 
 		const parts = this.phokenize(phext);
-		const text = parts[0].scroll.split('\n')[0];
+		const first = parts[0].scroll;
+		const newline = first.indexOf('\n');
+		const text = newline >= 0 ? first.substring(0, newline) : first;
 		if (text.length < 32) { limit = text.length; }
 		var result = text.substring(0, limit);
 		if (result.length < phext.length) {
@@ -351,60 +353,31 @@ export class Phext {
 	};
 
 	next_scroll = (phext: string, start: Coordinate): PositionedScroll => {
-		var location = start;
-  		var output = "";
-  		var remaining = "";
-		var pi = 0;
-		var begin = start;
-  		var pmax = phext.length;
-  		while (pi < pmax) {
-    		var test = phext[pi];
-    		var dimension_break = false;
-    		if (test == this.SCROLL_BREAK)     { location.scroll_break();     dimension_break = true; }
-    		if (test == this.SECTION_BREAK)    { location.section_break();    dimension_break = true; }
-    		if (test == this.CHAPTER_BREAK)    { location.chapter_break();    dimension_break = true; }
-    		if (test == this.BOOK_BREAK)       { location.book_break();       dimension_break = true; }
-    		if (test == this.VOLUME_BREAK)     { location.volume_break();     dimension_break = true; }
-    		if (test == this.COLLECTION_BREAK) { location.collection_break(); dimension_break = true; }
-    		if (test == this.SERIES_BREAK)     { location.series_break();     dimension_break = true; }
-    		if (test == this.SHELF_BREAK)      { location.shelf_break();      dimension_break = true; }
-    		if (test == this.LIBRARY_BREAK)    { location.library_break();    dimension_break = true; }
-
-    		if (dimension_break) {
-      			if (output.length > 0) {
-        			pi += 1;
-        			break;
-      			}
-    		} else {
-      			begin = new Coordinate(location.to_string());
-      			output += phext[pi];
-    		}
-    		++pi;
-  		}
-
-		if (pi < pmax) {
-			remaining = phext.substring(pi);
-		}
-
-  		const out_scroll = new PositionedScroll(begin, output, location, remaining);
-  		return out_scroll;
+		const step = scan_scroll(phext, 0, start);
+		const output = step.first >= 0 ? phext.substring(step.first, step.end) : "";
+		const remaining = step.next < phext.length ? phext.substring(step.next) : "";
+		return new PositionedScroll(step.begin ?? start, output, start, remaining);
 	};
 
+	// One pass over the document: each step is exactly one next_scroll call, but it works on offsets
+	// into `phext` instead of a fresh copy of the remainder. Earlier versions also built each scroll one
+	// code unit at a time and copied the coordinate (via to_string) for every code unit, which made
+	// explode cost ~1.5 us per code unit; scrolls are now taken with a single substring each.
+	// As before, every token's `next` is the one shared walker, and `remaining` is the text after it.
 	phokenize = (phext: string): Array<PositionedScroll> => {
 		var result = Array();
-  		var coord = new Coordinate();
-		
-		var temp = phext;
+		const coord = new Coordinate();
+		const max = phext.length;
+		var pi = 0;
 		while (true) {
-			var ith_result = this.next_scroll(temp, coord);
-			if (ith_result.scroll.length == 0)
-			{
+			const step = scan_scroll(phext, pi, coord);
+			if (step.first < 0) {
 				break;
 			}
-			result.push(ith_result);
-			coord = ith_result.next;
-			temp = ith_result.remaining;
-			if (ith_result.remaining.length == 0) {
+			const remaining = step.next < max ? phext.substring(step.next) : "";
+			result.push(new PositionedScroll(step.begin!, phext.substring(step.first, step.end), coord, remaining));
+			pi = step.next;
+			if (pi >= max) {
 				break;
 			}
 		}
@@ -795,6 +768,54 @@ export class Coordinate {
 
 // internal static data
 var __internal_phext = new Phext(); // for constants
+
+// Advances `coord` past the dimension break whose UTF-16 code unit is `code`. Returns false, leaving
+// `coord` untouched, for anything else (including LINE_BREAK, which is not a dimension break).
+function apply_break(coord: Coordinate, code: number): boolean {
+	switch (code) {
+		case 0x17: coord.scroll_break();     return true; // SCROLL_BREAK
+		case 0x18: coord.section_break();    return true; // SECTION_BREAK
+		case 0x19: coord.chapter_break();    return true; // CHAPTER_BREAK
+		case 0x1A: coord.book_break();       return true; // BOOK_BREAK
+		case 0x1C: coord.volume_break();     return true; // VOLUME_BREAK
+		case 0x1D: coord.collection_break(); return true; // COLLECTION_BREAK
+		case 0x1E: coord.series_break();     return true; // SERIES_BREAK
+		case 0x1F: coord.shelf_break();      return true; // SHELF_BREAK
+		case 0x01: coord.library_break();    return true; // LIBRARY_BREAK
+	}
+	return false;
+}
+
+// One next_scroll step starting at code unit `pi`, advancing `location` in place: skip leading breaks,
+// take the run of text, then consume the break that ends it. Breaks are single BMP code units, so the
+// offsets never split a surrogate pair. `first` is -1 when no text was found before the end.
+function scan_scroll(phext: string, pi: number, location: Coordinate): ScrollStep {
+	const max = phext.length;
+	var first = -1;
+	var end = max;
+	var begin: Coordinate | null = null;
+	while (pi < max) {
+		if (apply_break(location, phext.charCodeAt(pi))) {
+			if (first >= 0) {
+				end = pi;
+				pi += 1;
+				break;
+			}
+		} else if (first < 0) {
+			first = pi;
+			begin = new Coordinate(location.to_string());
+		}
+		++pi;
+	}
+	return { begin, first, end, next: pi };
+}
+
+interface ScrollStep {
+	begin: Coordinate | null; // copy of the coordinate the text sits at (null if there was no text)
+	first: number;            // offset of the first code unit of text, or -1
+	end: number;              // offset one past the last code unit of text
+	next: number;             // offset where the following step starts
+}
 
 // internal classes
 

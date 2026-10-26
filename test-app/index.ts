@@ -1,5 +1,6 @@
 import { Phext, Coordinate } from "libphext";
 import * as fs from 'fs';
+import { ReferencePhext } from "./reference.ts";
 
 const phext = new Phext();
 
@@ -97,6 +98,9 @@ class Tests {
         this.test_phext_index();
         //this.test_scroll_manifest();
         this.test_phext_soundex_v1();
+        this.test_linear_phokenize_matches_reference();
+        this.test_explode_implode_roundtrip();
+        this.test_large_phext_explodes_in_linear_time();
     };
 
     test_coordinate_parsing = () => {
@@ -1010,6 +1014,175 @@ class Tests {
         const sample = "it was the best of scrolls\x17it was the worst of scrolls\x17aaa\x17bbb\x17ccc\x17ddd\x17eee\x17fff\x17ggg\x17hhh\x17iii\x17jjj\x17kkk\x17lll\x18mmm\x18nnn\x18ooo\x18ppp\x19qqq\x19rrr\x19sss\x19ttt\x1auuu\x1avvv\x1awww\x1axxx\x1ayyy\x1azzz";
         const result = phext.soundex_v1(sample);
         assert_eq("PSV1", result, "36\x1741\x171\x174\x177\x1710\x171\x174\x177\x171\x171\x177\x177\x1713\x1816\x1816\x181\x184\x197\x1919\x197\x1910\x1a1\x1a4\x1a1\x1a7\x1a1\x1a7", "Soundex");
+    };
+    // ---------------------------------------------------------------------------------------------
+    // linear-time tokenizer: differential tests against the pre-rewrite implementation (reference.ts)
+    // ---------------------------------------------------------------------------------------------
+    _edge_cases = (): Array<string> => {
+        const all = "\x17\x18\x19\x1A\x1C\x1D\x1E\x1F\x01";
+        return [
+            "", "a", "\n", "\x17", "\x01", all, all + all, "1\x172\x183\x194\x1A5\x1C6\x1D7\x1E8\x1F9\x0110",
+            "\x17a", "a\x17", "\x17a\x17", "\x17\x17a\x17\x17b\x17\x17", "a\x17\x17\x17b", "a\x18\x17b\x01\x1Fc",
+            "line 1\nline 2\x17next\n", "\n\x17\n", "a\x07b\x17c",
+            "é\x17日本\x18\u{1F600}\x19x\u{1F600}y\x01\u{1F980}", "\u{1F600}", "\x17\u{1F600}\x17", "\u{1F600}\u{1F600}\x1F\u{1F600}",
+            "a" + "\x17".repeat(1005) + "b" + "\x17c",                    // scroll saturates at 999
+            "\x01".repeat(1001) + "deep" + "\x1F".repeat(1001) + "deeper", // library and shelf saturate
+            "x".repeat(40) + "\n" + "y".repeat(40) + "\x17short",
+        ];
+    };
+
+    _lcg = (seed: number) => {
+        // deterministic 32-bit LCG (Numerical Recipes constants); high bits are the most random
+        var state = seed >>> 0;
+        return (bound: number): number => {
+            state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+            return (state >>> 8) % bound;
+        };
+    };
+
+    _random_doc = (next: (bound: number) => number): string => {
+        const delims = ["\x17", "\x18", "\x19", "\x1A", "\x1C", "\x1D", "\x1E", "\x1F", "\x01"];
+        const text = ["a", "b", "z", " ", "\n", "é", "日", "\u{1F600}", "\u{1F980}", "\x07", "0", "."];
+        const parts = next(12);
+        var doc = "";
+        for (var i = 0; i < parts; ++i) {
+            const kind = next(4);
+            if (kind == 0) {
+                const run = 1 + next(4);
+                for (var j = 0; j < run; ++j) { doc += delims[next(delims.length)]; }
+            } else if (kind == 1) {
+                doc += delims[next(delims.length)];
+            } else {
+                const run = 1 + next(6);
+                for (var j = 0; j < run; ++j) { doc += text[next(text.length)]; }
+            }
+        }
+        return doc;
+    };
+
+    _describe_tokens = (tokens: Array<any>): string => {
+        // everything a caller can observe: coordinates, text, the shared `next` walker and `remaining`
+        return JSON.stringify(tokens.map(t => [t.coord.to_string(), t.scroll, t.next.to_string(), t.remaining,
+                                               t.next === tokens[0].next, t.coord === t.next]));
+    };
+
+    _describe_subspace = (s: any): string => {
+        return JSON.stringify([s.start, s.end, s.coord.to_string(), s.fallback.to_string(), s.coord === s.fallback]);
+    };
+
+    _describe_call = (fn: () => string): string => {
+        try { return "ok:" + fn(); } catch (e) { return "throws:" + (e as Error).message; }
+    };
+
+    _compare_with_reference = (doc: string, next: (bound: number) => number): string => {
+        const ref = new ReferencePhext();
+        const outputs: Array<[string, string, string]> = [];
+        const check = (what: string, fn: (p: Phext) => string) => {
+            outputs.push([what, this._describe_call(() => fn(phext)), this._describe_call(() => fn(ref))]);
+        };
+
+        check("phokenize", p => this._describe_tokens(p.phokenize(doc)));
+        check("dephokenize", p => p.dephokenize(p.phokenize(doc)));
+        check("normalize", p => p.normalize(doc));
+        check("textmap", p => p.textmap(doc));
+        check("navmap", p => p.navmap("/x/", doc));
+        check("index", p => p.index(doc));
+        check("create_summary", p => p.create_summary(doc));
+        check("soundex_v1", p => p.soundex_v1(doc));
+
+        const start = `${1 + next(3)}.1.${1 + next(2)}/1.${1 + next(2)}.1/${1 + next(3)}.1.${1 + next(4)}`;
+        check("next_scroll", p => {
+            const location = new Coordinate(start);
+            const step = p.next_scroll(doc, location);
+            return JSON.stringify([this._describe_tokens([step]), location.to_string(),
+                                   step.coord === location, step.next === location]);
+        });
+
+        // targets: every token coordinate, a few random spots, and the far corner
+        const targets: Array<string> = [];
+        for (const t of phext.phokenize(doc)) { targets.push(t.coord.to_string()); }
+        for (var i = 0; i < 3; ++i) {
+            targets.push(`${1 + next(3)}.${1 + next(2)}.${1 + next(2)}/${1 + next(2)}.${1 + next(2)}.${1 + next(2)}/${1 + next(2)}.${1 + next(3)}.${1 + next(4)}`);
+        }
+        targets.push("999.999.999/999.999.999/999.999.999");
+        for (const address of targets) {
+            const target = () => phext.to_coordinate(address);
+            check(`get_subspace_coordinates ${address}`, p => this._describe_subspace(p.get_subspace_coordinates(doc, target())));
+            check(`fetch ${address}`, p => p.fetch(doc, target()));
+            check(`insert ${address}`, p => p.insert(doc, target(), "ins"));
+            check(`replace ${address}`, p => p.replace(doc, target(), "rep"));
+            check(`remove ${address}`, p => p.remove(doc, target()));
+            check(`range_replace ${address}`, p => p.range_replace(doc, p.create_range(new Coordinate(), target()), "rr"));
+            check(`offset ${address}`, p => `${p.offset(doc, target())}`);
+        }
+        check("merge", p => p.merge(doc, "m1\x17m2\x18m3"));
+        check("subtract", p => p.subtract(doc, "m1\x17m2"));
+
+        for (const [what, ours, theirs] of outputs) {
+            if (ours != theirs) {
+                return `${what} on ${JSON.stringify(doc)}: ${ours} != ${theirs}`;
+            }
+        }
+        return "";
+    };
+
+    test_linear_phokenize_matches_reference = () => {
+        const next = this._lcg(0x5eed);
+        var mismatch = "";
+        for (const doc of this._edge_cases()) {
+            mismatch = mismatch || this._compare_with_reference(doc, next);
+        }
+        assert_eq("LP1", mismatch, "", "edge cases match the reference implementation");
+
+        mismatch = "";
+        const count = 3000;
+        for (var i = 0; i < count && mismatch == ""; ++i) {
+            mismatch = this._compare_with_reference(this._random_doc(next), next);
+        }
+        assert_eq("LP2", mismatch, "", `${count} random documents match the reference implementation`);
+    };
+
+    test_explode_implode_roundtrip = () => {
+        const next = this._lcg(42);
+        const pairs = (d: string) => JSON.stringify(phext.phokenize(d).map((t: any) => [t.coord.to_string(), t.scroll]));
+        var failure = "";
+        for (var i = 0; i < 2000 && failure == ""; ++i) {
+            const doc = this._random_doc(next);
+            const once = phext.dephokenize(phext.phokenize(doc));
+            const twice = phext.dephokenize(phext.phokenize(once));
+            if (once != twice || pairs(doc) != pairs(once)) {
+                failure = JSON.stringify(doc);
+            }
+        }
+        assert_eq("RT1", failure, "", "implode(explode(doc)) keeps every scroll at its coordinate");
+
+        const canonical = "one\x17two\x18three\x19four\x1Afive\x1Csix\x1Dseven\x1Eeight\x1Fnine\x01ten\n\u{1F600}";
+        assert_eq("RT2", phext.dephokenize(phext.phokenize(canonical)), canonical, "canonical phext round trips byte for byte");
+    };
+
+    test_large_phext_explodes_in_linear_time = () => {
+        // 50,000 scrolls: 100 per section, 100 sections per chapter (well inside the 999 limit)
+        const scrolls = 50000;
+        const pieces: Array<string> = [];
+        for (var i = 0; i < scrolls; ++i) {
+            if (i > 0) { pieces.push(i % 10000 == 0 ? "\x19" : i % 100 == 0 ? "\x18" : "\x17"); }
+            pieces.push(`scroll ${i} é\u{1F600} lorem ipsum dolor sit amet\nsecond line`);
+        }
+        const doc = pieces.join("");
+
+        const t0 = performance.now();
+        const tokens = phext.phokenize(doc);
+        const elapsed = performance.now() - t0;
+        assert_number_eq("LT1", tokens.length, scrolls, "every scroll is found");
+        assert_eq("LT2", tokens[scrolls - 1].coord.to_string(), "1.1.1/1.1.1/5.100.100", "last coordinate");
+        assert_eq("LT3", phext.dephokenize(tokens), doc, "implode restores the document");
+        assert_true("LT4", elapsed < 1000, `explode of ${doc.length} code units took ${elapsed.toFixed(1)} ms`);
+
+        const t1 = performance.now();
+        const last = phext.fetch(doc, phext.to_coordinate("1.1.1/1.1.1/5.100.100"));
+        const fetch_elapsed = performance.now() - t1;
+        assert_eq("LT5", last, pieces[pieces.length - 1], "fetch of the last scroll");
+        assert_true("LT6", fetch_elapsed < 1000, `fetch took ${fetch_elapsed.toFixed(1)} ms`);
     };
 }
 var runner = new Tests();
