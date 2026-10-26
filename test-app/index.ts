@@ -100,6 +100,10 @@ class Tests {
         this.test_phext_soundex_v1();
         this.test_linear_phokenize_matches_reference();
         this.test_explode_implode_roundtrip();
+        this.test_edits_act_on_exactly_the_target_scroll();
+        this.test_subtract_removes_only_masked_scrolls();
+        this.test_rust_parity_details();
+        this.test_checksum_matches_libphext_rs();
         this.test_large_phext_explodes_in_linear_time();
     };
 
@@ -1081,13 +1085,13 @@ class Tests {
             outputs.push([what, this._describe_call(() => fn(phext)), this._describe_call(() => fn(ref))]);
         };
 
+        // textmap, navmap, create_summary, get_subspace_coordinates, fetch, insert, range_replace,
+        // offset, and subtract changed on purpose to match libphext-rs 0.3.x; the tests after this one
+        // check them against what each operation should produce.
         check("phokenize", p => this._describe_tokens(p.phokenize(doc)));
         check("dephokenize", p => p.dephokenize(p.phokenize(doc)));
         check("normalize", p => p.normalize(doc));
-        check("textmap", p => p.textmap(doc));
-        check("navmap", p => p.navmap("/x/", doc));
         check("index", p => p.index(doc));
-        check("create_summary", p => p.create_summary(doc));
         check("soundex_v1", p => p.soundex_v1(doc));
 
         const start = `${1 + next(3)}.1.${1 + next(2)}/1.${1 + next(2)}.1/${1 + next(3)}.1.${1 + next(4)}`;
@@ -1107,16 +1111,10 @@ class Tests {
         targets.push("999.999.999/999.999.999/999.999.999");
         for (const address of targets) {
             const target = () => phext.to_coordinate(address);
-            check(`get_subspace_coordinates ${address}`, p => this._describe_subspace(p.get_subspace_coordinates(doc, target())));
-            check(`fetch ${address}`, p => p.fetch(doc, target()));
-            check(`insert ${address}`, p => p.insert(doc, target(), "ins"));
             check(`replace ${address}`, p => p.replace(doc, target(), "rep"));
             check(`remove ${address}`, p => p.remove(doc, target()));
-            check(`range_replace ${address}`, p => p.range_replace(doc, p.create_range(new Coordinate(), target()), "rr"));
-            check(`offset ${address}`, p => `${p.offset(doc, target())}`);
         }
         check("merge", p => p.merge(doc, "m1\x17m2\x18m3"));
-        check("subtract", p => p.subtract(doc, "m1\x17m2"));
 
         for (const [what, ours, theirs] of outputs) {
             if (ours != theirs) {
@@ -1140,6 +1138,171 @@ class Tests {
             mismatch = this._compare_with_reference(this._random_doc(next), next);
         }
         assert_eq("LP2", mismatch, "", `${count} random documents match the reference implementation`);
+    };
+
+    // The non-empty scrolls of a document, keyed by address, as explode reports them.
+    _content = (doc: string): Record<string, string> => {
+        const out: Record<string, string> = {};
+        for (const [address, text] of phext.explode(doc)) {
+            if (text.length > 0) { out[address] = text; }
+        }
+        return out;
+    };
+
+    // True when every scroll with text has its own coordinate. Past 999 breaks a coordinate stops
+    // growing, so two scrolls can share one; a coordinate-to-text map cannot describe those documents.
+    _distinct = (doc: string): boolean => {
+        const seen = new Set<string>();
+        for (const t of phext.phokenize(doc)) {
+            if (t.scroll.length == 0) { continue; }
+            const address = t.coord.to_string();
+            if (seen.has(address)) { return false; }
+            seen.add(address);
+        }
+        return true;
+    };
+
+    _same = (a: Record<string, string>, b: Record<string, string>): boolean => {
+        const ka = Object.keys(a).sort();
+        const kb = Object.keys(b).sort();
+        return JSON.stringify(ka) == JSON.stringify(kb) && ka.every(k => a[k] == b[k]);
+    };
+
+    _rust_cases = (): Array<string> => [
+        "a\x18b\x19c",
+        "a\x17b\x17",
+        "x\x17",
+        "\x19\x1aa",
+        "a\x18b\x19c\x1ad\x1ce\x1df\x1eg\x1fh\x01i",
+    ];
+
+    // fetch, replace, insert, and remove act on exactly the scroll at the target coordinate, whether it
+    // holds text, is empty, falls between two scrolls, or lies past the end (ported from libphext-rs).
+    test_edits_act_on_exactly_the_target_scroll = () => {
+        const next = this._lcg(0xc0de);
+        const docs = this._edge_cases().concat(this._rust_cases());
+        for (var i = 0; i < 1500; ++i) { docs.push(this._random_doc(next)); }
+        var failure = "";
+        for (const doc of docs) {
+            if (failure != "") { break; }
+            if (!this._distinct(doc)) { continue; }
+            const before = this._content(doc);
+            const targets: Array<string> = [];
+            for (const t of phext.phokenize(doc)) {
+                targets.push(t.coord.to_string());
+                const after = new Coordinate(t.coord.to_string()); after.scroll_break(); targets.push(after.to_string());
+                const deeper = new Coordinate(t.coord.to_string()); deeper.section_break(); targets.push(deeper.to_string());
+            }
+            for (var j = 0; j < 4; ++j) {
+                targets.push(`${1 + next(3)}.${1 + next(3)}.${1 + next(3)}/${1 + next(3)}.${1 + next(3)}.${1 + next(3)}/${1 + next(3)}.${1 + next(3)}.${1 + next(5)}`);
+            }
+            for (const address of targets) {
+                const target = () => phext.to_coordinate(address);
+                const current = before[address] ?? "";
+                const fetched = phext.fetch(doc, target());
+                if (fetched != current) { failure = `fetch ${JSON.stringify(doc)} at ${address}: ${JSON.stringify(fetched)}`; break; }
+                if (!this._same(this._content(phext.replace(doc, target(), "X")), { ...before, [address]: "X" })) {
+                    failure = `replace ${JSON.stringify(doc)} at ${address}`; break;
+                }
+                if (!this._same(this._content(phext.insert(doc, target(), "Y")), { ...before, [address]: current + "Y" })) {
+                    failure = `insert ${JSON.stringify(doc)} at ${address}`; break;
+                }
+                const removed = { ...before }; delete removed[address];
+                if (!this._same(this._content(phext.remove(doc, target())), removed)) {
+                    failure = `remove ${JSON.stringify(doc)} at ${address}`; break;
+                }
+                if (Number.isNaN(phext.offset(doc, target()))) { failure = `offset NaN ${JSON.stringify(doc)} at ${address}`; break; }
+            }
+        }
+        assert_eq("SE1", failure, "", "fetch/replace/insert/remove act on exactly the target scroll");
+
+        const between = phext.to_coordinate("1.1.1/1.1.1/1.1.2");
+        assert_eq("SE2", phext.fetch("a\x18b\x19c", between), "", "a missing coordinate between scrolls is empty");
+        assert_eq("SE3", phext.insert("a\x18b\x19c", between, "Y"), "a\x17Y\x18b\x19c", "insert lands between the scrolls");
+        assert_eq("SE4", phext.fetch("a\x17b\x17", between), "b", "a scroll followed by a final break is found");
+        assert_eq("SE5", phext.insert("x\x17", between, "Y"), "x\x17Y", "insert after a final break adds no extra break");
+    };
+
+    test_subtract_removes_only_masked_scrolls = () => {
+        const next = this._lcg(0x5b7);
+        const docs = this._edge_cases().concat(this._rust_cases());
+        for (var i = 0; i < 1000; ++i) { docs.push(this._random_doc(next)); }
+        var failure = "";
+        for (var i = 0; i < docs.length && failure == ""; ++i) {
+            const left = docs[i];
+            const right = docs[(i + 1) % docs.length];
+            if (!this._distinct(left) || !this._distinct(right)) { continue; }
+            const mask = this._content(right);
+            const want: Record<string, string> = {};
+            for (const [address, text] of Object.entries(this._content(left))) {
+                if (!(address in mask)) { want[address] = text; }
+            }
+            if (!this._same(this._content(phext.subtract(left, right)), want)) {
+                failure = `${JSON.stringify(left)} - ${JSON.stringify(right)}`;
+            }
+        }
+        assert_eq("SB1", failure, "", "subtract removes exactly the scrolls with content on the right");
+        assert_eq("SB2", phext.subtract("\x17\x17lead", "a\x18b"), "\x17\x17lead", "unmasked scrolls survive");
+    };
+
+    test_rust_parity_details = () => {
+        assert_eq("RP1", phext.create_summary(""), "", "an empty summary is empty, as in libphext-rs");
+        assert_eq("RP2", phext.create_summary("x".repeat(50) + "\x17y"), "x".repeat(50) + "...", "summaries are not capped at 32 characters");
+        assert_eq("RP3", phext.create_summary("one\ntwo"), "one...", "summaries stop at a line break");
+        assert_eq("RP4", phext.create_summary("Ċbc"), "Ċbc", "U+010A is not a line break");
+        assert_eq("RP5", phext.textmap("a\x17" + "z".repeat(40)), `* 1.1.1/1.1.1/1.1.1: a\n* 1.1.1/1.1.1/1.1.2: ${"z".repeat(40)}\n`, "textmap uses full summaries");
+        assert_eq("RP6", `${phext.offset("\x19\x1aa", phext.to_coordinate("1.1.1/1.1.1/1.1.1"))}`, "0", "offset before the first scroll is 0, not NaN");
+        assert_eq("RP7", `${phext.offset("ab\x17cd", phext.to_coordinate("1.1.1/1.1.1/1.1.9"))}`, "3", "offset uses the last scroll before the coordinate");
+
+        const map = phext.explode("a\x17b\x18c");
+        assert_eq("RP8", JSON.stringify(Array.from(map.entries())), JSON.stringify([["1.1.1/1.1.1/1.1.1", "a"], ["1.1.1/1.1.1/1.1.2", "b"], ["1.1.1/1.1.1/1.2.1", "c"]]), "explode maps addresses to scrolls");
+        const reordered = new Map([["1.1.1/1.1.1/1.2.1", "c"], ["1.1.1/1.1.1/1.1.1", "a"], ["1.1.1/1.1.1/1.1.2", "b"]]);
+        assert_eq("RP9", phext.implode(reordered), "a\x17b\x18c", "implode sorts by coordinate");
+        assert_eq("RP10", phext.implode({ "2.1.1/1.1.1/1.1.1": "z", "1.1.1/1.1.1/1.1.1": "" }), "\x01z", "implode takes a plain object and skips empty scrolls");
+    };
+
+    // Hashes from libphext-rs: its test_scroll_manifest values, and one input per XXH3 length range
+    // (the text is "a", "h", "o", ... repeating, as generated on the Rust side).
+    test_checksum_matches_libphext_rs = () => {
+        const scrolls: Array<[string, string]> = [
+            ["00000000000000000000", "7e79edd92a62a048e1cd24ffab542e34"],
+            ["first scroll", "ba9d944e4967e29d48bae69ac2999699"],
+            ["second scroll", "2fe1b2040314ac66f132dd3b4926157c"],
+            ["second section", "fddb6916753b6f4e0b5281469134778b"],
+            ["second chapter", "16ab5b1a0a997db95ec215a3bf2c57b3"],
+            ["book 2", "0f20f79bf36f63e8fba25cc6765e2d0d"],
+            ["volume 2", "7ead0c6fef43adb446fe3bda6fb0adc7"],
+            ["collection 2", "78c12298931c6edede92962137a9280a"],
+            ["series 2", "0f35100c84df601a490b7b63d7e8c0a8"],
+            ["shelf 2", "3bbf7e67cb33d613a906bc5a3cbefd95"],
+            ["library 2", "2e7fdd387196a8a2706ccb9ad6792bc3"],
+            ["日本 😀 ü", "c5f1f7cc4b8c7f0788685c3d49c44cd5"],
+        ];
+        var mismatch = "";
+        for (const [text, want] of scrolls) {
+            const got = phext.checksum(text);
+            if (got != want) { mismatch = mismatch || `${JSON.stringify(text)}: ${got} != ${want}`; }
+        }
+        const lengths: Array<[number, string]> = [
+            [0, "99aa06d3014798d86001c324468d497f"], [3, "6fef1ddc63a184e27ea47a004f34273c"],
+            [8, "bab47c44b78c316e6836506688b00420"], [16, "1601ce126aecd5d8282de1accaf34f85"],
+            [17, "cd1485e2dcbb82169f633a7238944073"], [128, "b35c73dba7d268cea0dc3a4cb362a8ee"],
+            [129, "ed2ce0a9e0b3487fcf37b6dc0e24647c"], [240, "6e6bedfc56d268dc9ba7bf264df74315"],
+            [241, "124293e87aa968dd58129d823c648ff5"], [1024, "c4977235c811415662efeb73eb589676"],
+            [10000, "ea060744707aa1445170dda38d2a2e98"],
+        ];
+        for (const [length, want] of lengths) {
+            var text = "";
+            for (var i = 0; i < length; ++i) { text += String.fromCharCode(97 + (i * 7 % 26)); }
+            const got = phext.checksum(text);
+            if (got != want) { mismatch = mismatch || `length ${length}: ${got} != ${want}`; }
+        }
+        assert_eq("CK1", mismatch, "", "checksum matches libphext-rs");
+
+        const example = "first scroll\x17second scroll\x18second section\x19second chapter\x1Abook 2\x1Cvolume 2\x1Dcollection 2\x1Eseries 2\x1Fshelf 2\x01library 2";
+        const h = (i: number) => scrolls[i][1];
+        const expected = `${h(1)}\x17${h(2)}\x18${h(3)}\x19${h(4)}\x1A${h(5)}\x1C${h(6)}\x1D${h(7)}\x1E${h(8)}\x1F${h(9)}\x01${h(10)}`;
+        assert_eq("CK2", phext.manifest(example), expected, "manifest matches libphext-rs");
     };
 
     test_explode_implode_roundtrip = () => {

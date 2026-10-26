@@ -7,8 +7,12 @@
 // This project was ported from https://github.com/wbic16/libphext-rs/blob/master/src/phext.rs.
 // Web Site: https://phext.io/
 // -----------------------------------------------------------------------------------------------------------
+// `buffer` is Node's own module under Node and the `buffer` package in browser bundles.
 import { Buffer } from 'buffer';
-//import * as xxhash from 'xxh3-ts/xxh3';
+import { XXH3_128 } from 'xxh3-ts/xxh3.js';
+
+// A line break or any of the nine dimension breaks.
+const PHEXT_BREAK = /[\n\x01\x17-\x1A\x1C-\x1F]/;
 
 export class Phext {
 	COORDINATE_MINIMUM: number;
@@ -68,70 +72,61 @@ export class Phext {
 	  	return false;
 	};
 
+	// Finds where the scroll at `target` sits, matching libphext-rs:
+	// - when the document reaches `target`, start..end is that scroll's text (empty if it has none) and
+	//   coord is `target`;
+	// - otherwise start == end is where the scroll would go: just before the break that steps past
+	//   `target`, or the end of the document. coord is the coordinate in effect there, so writing breaks
+	//   from coord up to `target` and then the text places it correctly.
+	// The walker only moves on a dimension break, so it is compared with `target` only at the start and
+	// after each break, and the scan stops as soon as it steps past `target`. Earlier versions left end at
+	// 0 when the target scroll was followed by a break at the very end of the document, so fetch returned
+	// "" and insert wrote at the start.
 	get_subspace_coordinates = (subspace: string, target: Coordinate): OffsetsAndCoordinate => {
-		var walker = new Coordinate();
-  		var fallback = new Coordinate();
-		var insertion = new Coordinate();
-  		var subspace_index = 0;
-  		var start = 0;
-  		var end = 0;
-  		var stage = 0;
-  		var max = subspace.length;
-
-		// The walker only moves on a dimension break, so the stage checks below give the same answer for
-		// every code unit of a scroll. Earlier versions re-ran them (copying the walker twice through
-		// to_string/to_coordinate) for every code unit; now they run once per break. Once stage 2 is
-		// reached the result is settled, so the rest of the document is not scanned.
+		const walker = new Coordinate();
+		var best = new Coordinate();
+		var found = -1;
+		const max = subspace.length;
+		var position = 0;
 		var moved = true;
-  		while (subspace_index < max) {
-			if (moved) {
+
+		for (;;) {
+			// `walker` is the coordinate in effect at `position`
+			if (moved && found < 0) {
+				if (walker.equals(target)) {
+					found = position;
+					best = this.to_coordinate(walker.to_string());
+				} else if (walker.less_than(target)) {
+					best = this.to_coordinate(walker.to_string());
+				} else {
+					// before the first scroll: `target` sorts ahead of 1.1.1/1.1.1/1.1.1
+					return new OffsetsAndCoordinate(position, position, best, best);
+				}
 				moved = false;
-
-    			if (stage == 0) {
-      				if (walker.equals(target)) {
-        				stage = 1;
-        				start = subspace_index;
-						fallback = this.to_coordinate(walker.to_string());
-						insertion = this.to_coordinate(walker.to_string());
-      				}
-      				if (walker.less_than(target)) {
-						fallback = this.to_coordinate(walker.to_string());
-						insertion = this.to_coordinate(walker.to_string());
-      				}
-    			}
-
-    			if (stage < 2 && walker.greater_than(target)) {
-					if (stage == 0) {
-        				start = subspace_index - 1;
-      				}
-					end = subspace_index - 1;
-					insertion = fallback;
-      				stage = 2;
-					break;
-    			}
+			}
+			if (position == max) {
+				break;
 			}
 
-			if (apply_break(walker, subspace.charCodeAt(subspace_index))) {
+			if (apply_break(walker, subspace.charCodeAt(position))) {
 				moved = true;
+				if (walker.greater_than(target)) {
+					return found >= 0
+						? new OffsetsAndCoordinate(found, position, best, best)
+						: new OffsetsAndCoordinate(position, position, best, best);
+				}
+				// a break that cannot advance a dimension already at 999 leaves the walker on `target`:
+				// the scroll's text starts after it
+				if (found == position) {
+					found = position + 1;
+				}
 			}
+			++position;
+		}
 
-    		++subspace_index;
-  		}
-
-  		if (stage == 1 && walker.equals(target)) {
-			end = max;
-			insertion = walker;
-    		stage = 2;
-  		}
-
-  		if (stage == 0) {
-    		start = max;
-    		end = max;
-			insertion = walker;
-  		}
-
-		var result = new OffsetsAndCoordinate(start, end, insertion, fallback);
-		return result;
+		return found >= 0
+			? new OffsetsAndCoordinate(found, max, best, best)
+			: new OffsetsAndCoordinate(max, max, best, best);
 	};
 
 	remove = (phext: string, location: Coordinate): string => {
@@ -139,20 +134,14 @@ export class Phext {
   		return this.normalize(phase1);
 	};
 
+	// The text up to the first line or dimension break, with "..." when anything follows, as in
+	// libphext-rs 0.3.x: no 32-character limit, and "" for an empty buffer.
 	create_summary = (phext: string): string => {
-  		var limit = 32;
-		if (phext.length == 0) { return "No Summary"; }
-
-		const parts = this.phokenize(phext);
-		const first = parts[0].scroll;
-		const newline = first.indexOf('\n');
-		const text = newline >= 0 ? first.substring(0, newline) : first;
-		if (text.length < 32) { limit = text.length; }
-		var result = text.substring(0, limit);
-		if (result.length < phext.length) {
-			result += "...";
+		const stop = phext.search(PHEXT_BREAK);
+		if (stop < 0) {
+			return phext;
 		}
-		return result;
+		return phext.substring(0, stop) + "...";
 	};
 
 	navmap = (urlbase: string, phext: string): string => {
@@ -187,12 +176,10 @@ export class Phext {
   		return result;
 	};
 
-	// disabled for now - xxh3-ts needs to be patched for the 0.8.2 release
-	// xxhash-addon works, but fails in frontends like vite
-	/*
+	// xxh3-128 of the UTF-8 bytes, as 32 hex digits: the same value libphext-rs and libphext-py return.
+	// xxh3-ts 2.x implements xxHash 0.8 and is plain TypeScript, so it also works in browser bundles.
 	checksum = (phext: string): string => {
-		const buffer = Buffer.from(phext);
-		const hash = xxhash.XXH3_128(buffer);
+		const hash = XXH3_128(Buffer.from(phext, 'utf8'));
 		return hash.toString(16).padStart(32, '0');
 	};
 
@@ -203,7 +190,7 @@ export class Phext {
 		}
 
 		return this.dephokenize(phokens);
-	};*/
+	};
 
 	soundex_internal = (buffer: string): number => {
 		var letter1 = "bpfv";
@@ -262,28 +249,18 @@ export class Phext {
 		return this.dephokenize(output);
 	};
 
+	// The offset of the scroll at `coord`, or of the last scroll before it; 0 when no scroll comes at or
+	// before `coord` (this used to return NaN).
 	offset = (phext: string, coord: Coordinate): number => {
-		var output = this.index_phokens(phext);
-
-		var best = new Coordinate();
-		var matched = false;
-		var fetch_coord = coord;
+		const output = this.index_phokens(phext);
+		var result = 0;
 		for (var i = 0; i < output.length; ++i) {
-			var phoken = output[i];
-		 	if (phoken.coord.less_than(coord) || phoken.coord.equals(coord)) {
-				best = phoken.coord;
-		  	}
-		  	if (phoken.coord == coord) {
-				matched = true;
-		  	}
+			if (output[i].coord.greater_than(coord)) {
+				break;
+			}
+			result = parseInt(output[i].scroll);
 		}
-
-		if (matched == false) {
-		  fetch_coord = best;
-		}
-		let index = this.dephokenize(output);
-
-		return parseInt(this.fetch(index, fetch_coord));
+		return result;
 	};
 
 	replace = (phext: string, location: Coordinate, scroll: string): string => {
@@ -511,29 +488,44 @@ export class Phext {
   		var pri = 0;
   		const max = pr.length;
 		var coord = new Coordinate();
+		// Keeps the left-hand scrolls whose coordinate has no content on the right. Earlier versions never
+		// moved past right-hand scrolls that sort before the current left one, so later scrolls were lost.
   		for (var i = 0; i < pl.length; ++i) {
-			var token = pl[i];
-    		var do_append = false;
-    		if (pri == max) {
-      			do_append = true;
-    		}
-
-    		if (pri < max) {
-      			let compare = pr[pri];
-      			if (token.coord.less_than(compare.coord)) {
-        			do_append = true;
-      			} else if (token.coord.equals(compare.coord)) {
-        			++pri;
-      			}
-    		}
-
-    		if (do_append) {
-      			result += this.append_scroll(token, coord);
-      			coord.advance_to(token.coord);
-    		}
+			const token = pl[i];
+			if (token.scroll.length == 0) {
+				continue;
+			}
+			while (pri < max && pr[pri].coord.less_than(token.coord)) {
+				++pri;
+			}
+			const masked = pri < max && pr[pri].coord.equals(token.coord) && pr[pri].scroll.length > 0;
+			if (!masked) {
+				result += this.append_scroll(token, coord);
+			}
   		}
 
   		return result;
+	};
+
+	// Explodes a phext into a map from coordinate address ("1.1.1/1.1.1/1.1.1") to scroll text, like
+	// libphext-rs `explode`. Keys are address strings because a Map keyed by Coordinate objects would
+	// compare them by identity.
+	explode = (phext: string): Map<string, string> => {
+		const map = new Map<string, string>();
+		const phokens = this.phokenize(phext);
+		for (var i = 0; i < phokens.length; ++i) {
+			map.set(phokens[i].coord.to_string(), phokens[i].scroll);
+		}
+		return map;
+	};
+
+	// Serializes a map from coordinate address to scroll text (a Map, or a plain object) back into a phext
+	// document, like libphext-rs `implode`. Empty scrolls are left out.
+	implode = (map: Map<string, string> | Record<string, string>): string => {
+		const entries = map instanceof Map ? Array.from(map.entries()) : Object.entries(map);
+		const phokens = entries.map(([address, scroll]) => this.create_positioned_scroll(this.to_coordinate(address), scroll));
+		phokens.sort((a, b) => a.coord.less_than(b.coord) ? -1 : (b.coord.less_than(a.coord) ? 1 : 0));
+		return this.dephokenize(phokens);
 	};
 
 	is_phext_break = (byte: string): boolean => {
