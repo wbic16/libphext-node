@@ -74,6 +74,7 @@ class Tests {
         this.test_to_urlencoded();
         this.test_scrolls();
         this.test_coordinate_validity();
+        this.test_coordinate_saturation();
         this.test_coordinate_based_insert();
         this.test_coordinate_based_remove();
         this.test_coordinate_based_replace();
@@ -341,6 +342,23 @@ class Tests {
     // * test_shelves
     // * test_libraries
     
+    test_coordinate_saturation = () => {
+        const c1 = new Coordinate("999.999.999/999.999.999/999.999.998");
+        c1.scroll_break();
+        assert_eq("CS1", c1.to_string(), "999.999.999/999.999.999/999.999.999", "advance to 999");
+        c1.scroll_break();
+        assert_eq("CS2", c1.to_string(), "999.999.999/999.999.999/999.999.999", "saturate at 999");
+        c1.section_break();
+        assert_eq("CS3", c1.to_string(), "999.999.999/999.999.999/999.999.1", "lower dimensions reset");
+        c1.library_break();
+        assert_eq("CS4", c1.to_string(), "999.1.1/1.1.1/1.1.1", "library saturates");
+
+        const text = "a" + "".repeat(1003) + "b";
+        const scrolls = phext.phokenize(text).filter((ps: any) => ps.scroll.length > 0);
+        assert_number_eq("CS5", scrolls.length, 2, "two scrolls");
+        assert_eq("CS6", scrolls[1].coord.to_string(), "1.1.1/1.1.1/1.1.999", "scroll run saturates");
+    };
+
     test_coordinate_validity = () => {
         const c1 = phext.to_coordinate("0.0.0/0.0.0/0.0.0"); // invalid
         var c2 = new Coordinate();
@@ -366,8 +384,8 @@ class Tests {
         assert_number_eq("CV6", c4.y.volume, 4, "spot check");
         const c4b = c4.validate_coordinate();
         const c5b = c5.validate_coordinate();
-        assert_false("CV7", c4b, "out of range");
-        assert_false("CV8", c5b, "out of range");
+        assert_true("CV7", c4b, "in range");
+        assert_true("CV8", c5b, "in range");
 
         const c6 = new Coordinate("11.12.13/14.15.16/17.18.19");
         assert_true("CV9", c6.validate_coordinate(), "valid coordinate");

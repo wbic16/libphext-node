@@ -9,7 +9,7 @@
   "type": "module",
   "exports": {
     ".": {
-      "import": "./dist/liphext.js"
+      "import": "./dist/libphext.js"
     }
   },
   "files": [

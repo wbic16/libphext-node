@@ -29,7 +29,7 @@ export class Phext {
 	ADDRESS_MACRO_ALT: string;
 	constructor() {
 		this.COORDINATE_MINIMUM = 1;
-		this.COORDINATE_MAXIMUM = 100;
+		this.COORDINATE_MAXIMUM = 1000;
         this.LIBRARY_BREAK       = '\x01'; // 11D Break - replaces start of header
         this.MORE_COWBELL        = '\x07'; // i've got a fever, and the only prescription...is more cowbell!
         this.LINE_BREAK          = '\x0A'; // same as plain text \o/
