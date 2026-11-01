@@ -12,7 +12,6 @@ import { Buffer } from 'buffer';
 
 export class Phext {
 	COORDINATE_MINIMUM: number;
-	COORDINATE_MAXIMUM: number;
 	LIBRARY_BREAK: string;
 	MORE_COWBELL: string;
 	LINE_BREAK: string;
@@ -29,7 +28,6 @@ export class Phext {
 	ADDRESS_MACRO_ALT: string;
 	constructor() {
 		this.COORDINATE_MINIMUM = 1;
-		this.COORDINATE_MAXIMUM = 1000;
         this.LIBRARY_BREAK       = '\x01'; // 11D Break - replaces start of header
         this.MORE_COWBELL        = '\x07'; // i've got a fever, and the only prescription...is more cowbell!
         this.LINE_BREAK          = '\x0A'; // same as plain text \o/
@@ -620,6 +618,17 @@ export class Phext {
 	};
 }
 
+// A Coordinate is nine unbounded components (each >= 1): library.shelf.series /
+// collection.volume.book / chapter.section.scroll. Since 0.4.0 there is no upper
+// limit on any component.
+//
+// Dense graphs: phext is sparse by design. Coordinate components are unbounded,
+// but a fully-populated dense graph contains the product of its dimensions'
+// extents in scrolls — a dense block spanning 1000 in each of 9 dimensions
+// implies 10^27 scrolls. Materializing, exploding, or indexing such a graph
+// costs memory proportional to its populated scroll count. The old 999 cap
+// never protected against this (999^9 was already unreachable); sparsity does.
+// Keep graphs sparse.
 export class Coordinate {
 	z: ZCoordinate;
 	y: YCoordinate;
@@ -713,7 +722,7 @@ export class Coordinate {
 	};
 
 	validate_index = (index: number): boolean => {
-		return index >= __internal_phext.COORDINATE_MINIMUM && index <= __internal_phext.COORDINATE_MAXIMUM;
+		return index >= __internal_phext.COORDINATE_MINIMUM;
   	};
 
 	validate_coordinate = (): boolean => {
@@ -738,12 +747,7 @@ export class Coordinate {
 	}
 
 	advance_coordinate = (index: number): number => {
-		var next = index + 1;
-		if (next < __internal_phext.COORDINATE_MAXIMUM) {
-			return next;
-		}
-
-		return index;
+		return index + 1;
 	};
 
 	library_break = (): void => {

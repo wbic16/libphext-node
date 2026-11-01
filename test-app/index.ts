@@ -74,7 +74,7 @@ class Tests {
         this.test_to_urlencoded();
         this.test_scrolls();
         this.test_coordinate_validity();
-        this.test_coordinate_saturation();
+        this.test_coordinate_unbounded();
         this.test_coordinate_based_insert();
         this.test_coordinate_based_remove();
         this.test_coordinate_based_replace();
@@ -342,21 +342,38 @@ class Tests {
     // * test_shelves
     // * test_libraries
     
-    test_coordinate_saturation = () => {
+    test_coordinate_unbounded = () => {
+        // since 0.4.0 coordinate components are unbounded: breaks advance
+        // past 999 instead of saturating there
         const c1 = new Coordinate("999.999.999/999.999.999/999.999.998");
         c1.scroll_break();
         assert_eq("CS1", c1.to_string(), "999.999.999/999.999.999/999.999.999", "advance to 999");
         c1.scroll_break();
-        assert_eq("CS2", c1.to_string(), "999.999.999/999.999.999/999.999.999", "saturate at 999");
+        assert_eq("CS2", c1.to_string(), "999.999.999/999.999.999/999.999.1000", "no saturation: advance to 1000");
         c1.section_break();
-        assert_eq("CS3", c1.to_string(), "999.999.999/999.999.999/999.999.1", "lower dimensions reset");
+        assert_eq("CS3", c1.to_string(), "999.999.999/999.999.999/999.1000.1", "higher dimension advances past 999, lower dimensions reset");
         c1.library_break();
-        assert_eq("CS4", c1.to_string(), "999.1.1/1.1.1/1.1.1", "library saturates");
+        assert_eq("CS4", c1.to_string(), "1000.1.1/1.1.1/1.1.1", "library advances past 999");
 
-        const text = "a" + "".repeat(1003) + "b";
+        // parse/print round-trip of a coordinate with components > 999
+        const big = "1234.5.6/7.8.9/10.11.12000";
+        const c2 = new Coordinate(big);
+        assert_eq("CS5", c2.to_string(), big, "round-trip above 999");
+        assert_true("CS6", c2.validate_coordinate(), "coordinate above 999 is valid");
+
+        // walking scroll breaks yields distinct coordinates 1000, 1001, ...
+        const walker = new Coordinate();
+        const seen: string[] = [];
+        for (var i = 0; i < 1001; ++i) {
+            walker.scroll_break();
+            if (walker.x.scroll >= 999) { seen.push(walker.to_string()); }
+        }
+        assert_eq("CS7", seen.join(" "), "1.1.1/1.1.1/1.1.999 1.1.1/1.1.1/1.1.1000 1.1.1/1.1.1/1.1.1001 1.1.1/1.1.1/1.1.1002", "distinct coordinates past 999");
+
+        const text = "a" + "\u0017".repeat(1003) + "b";
         const scrolls = phext.phokenize(text).filter((ps: any) => ps.scroll.length > 0);
-        assert_number_eq("CS5", scrolls.length, 2, "two scrolls");
-        assert_eq("CS6", scrolls[1].coord.to_string(), "1.1.1/1.1.1/1.1.999", "scroll run saturates");
+        assert_number_eq("CS8", scrolls.length, 2, "two scrolls");
+        assert_eq("CS9", scrolls[1].coord.to_string(), "1.1.1/1.1.1/1.1.1004", "scroll run advances past 999");
     };
 
     test_coordinate_validity = () => {

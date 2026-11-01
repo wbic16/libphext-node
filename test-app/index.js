@@ -81,6 +81,7 @@ var Tests = /** @class */ (function () {
             _this.test_to_urlencoded();
             _this.test_scrolls();
             _this.test_coordinate_validity();
+            _this.test_coordinate_unbounded();
             _this.test_coordinate_based_insert();
             _this.test_coordinate_based_remove();
             _this.test_coordinate_based_replace();
@@ -307,6 +308,38 @@ var Tests = /** @class */ (function () {
         // * test_series
         // * test_shelves
         // * test_libraries
+        this.test_coordinate_unbounded = function () {
+            // since 0.4.0 coordinate components are unbounded: breaks advance
+            // past 999 instead of saturating there
+            var c1 = new libphext_1.Coordinate("999.999.999/999.999.999/999.999.998");
+            c1.scroll_break();
+            assert_eq("CS1", c1.to_string(), "999.999.999/999.999.999/999.999.999", "advance to 999");
+            c1.scroll_break();
+            assert_eq("CS2", c1.to_string(), "999.999.999/999.999.999/999.999.1000", "no saturation: advance to 1000");
+            c1.section_break();
+            assert_eq("CS3", c1.to_string(), "999.999.999/999.999.999/999.1000.1", "higher dimension advances past 999, lower dimensions reset");
+            c1.library_break();
+            assert_eq("CS4", c1.to_string(), "1000.1.1/1.1.1/1.1.1", "library advances past 999");
+            // parse/print round-trip of a coordinate with components > 999
+            var big = "1234.5.6/7.8.9/10.11.12000";
+            var c2 = new libphext_1.Coordinate(big);
+            assert_eq("CS5", c2.to_string(), big, "round-trip above 999");
+            assert_true("CS6", c2.validate_coordinate(), "coordinate above 999 is valid");
+            // walking scroll breaks yields distinct coordinates 1000, 1001, ...
+            var walker = new libphext_1.Coordinate();
+            var seen = [];
+            for (var i = 0; i < 1001; ++i) {
+                walker.scroll_break();
+                if (walker.x.scroll >= 999) {
+                    seen.push(walker.to_string());
+                }
+            }
+            assert_eq("CS7", seen.join(" "), "1.1.1/1.1.1/1.1.999 1.1.1/1.1.1/1.1.1000 1.1.1/1.1.1/1.1.1001 1.1.1/1.1.1/1.1.1002", "distinct coordinates past 999");
+            var text = "a" + "\u0017".repeat(1003) + "b";
+            var scrolls = phext.phokenize(text).filter(function (ps) { return ps.scroll.length > 0; });
+            assert_number_eq("CS8", scrolls.length, 2, "two scrolls");
+            assert_eq("CS9", scrolls[1].coord.to_string(), "1.1.1/1.1.1/1.1.1004", "scroll run advances past 999");
+        };
         this.test_coordinate_validity = function () {
             var c1 = phext.to_coordinate("0.0.0/0.0.0/0.0.0"); // invalid
             var c2 = new libphext_1.Coordinate();
@@ -341,8 +374,8 @@ var Tests = /** @class */ (function () {
             assert_number_eq("CV6", c4.y.volume, 4, "spot check");
             var c4b = c4.validate_coordinate();
             var c5b = c5.validate_coordinate();
-            assert_false("CV7", c4b, "out of range");
-            assert_false("CV8", c5b, "out of range");
+            assert_true("CV7", c4b, "in range");
+            assert_true("CV8", c5b, "in range");
             var c6 = new libphext_1.Coordinate("11.12.13/14.15.16/17.18.19");
             assert_true("CV9", c6.validate_coordinate(), "valid coordinate");
         };
