@@ -17,5 +17,16 @@ if [ ! -x node_modules/.bin/vite ]; then
   npm install
 fi
 npx vite build
+
+# Vite does not emit type declarations, so follow with a declaration-only
+# tsc pass into dist/ (same tsconfig.build.json the test harness uses —
+# it carries the xxh3-ts paths shim; see src/xxh3-ts.d.ts). package.json's
+# "types" points at the resulting dist/index.d.ts, and the "files" field
+# already ships all of dist/, so the tarball carries real typings.
+if [ ! -x node_modules/.bin/tsc ]; then
+  echo "dependencies missing — running npm install"
+  npm install
+fi
+node_modules/.bin/tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist
 echo "--- dist/:"
 ls -la dist/

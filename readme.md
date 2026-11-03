@@ -82,7 +82,11 @@ for you if `node_modules` is missing).
 ### Build
 
 1. Run `scripts/build.sh` — this runs `npx vite build`, producing the ES
-   and UMD bundles in `dist/`.
+   and UMD bundles in `dist/`, then a declaration-only `tsc` pass that emits
+   `dist/index.d.ts`. The published tarball ships the typings:
+   `package.json`'s `types` (and the `exports` types condition) point at
+   `dist/index.d.ts`, and `main`/`module` at the real ES bundle,
+   `dist/libphext.js`.
 2. ⚠️ Do not use `npm run build` (parcel): the parcel build is broken by a
    pre-existing dependency conflict (parcel ^2.12 vs the pinned
    @parcel/transformer-typescript-types 2.8.3). That is a toolchain

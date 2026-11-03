@@ -3,13 +3,15 @@
   "version": "0.4.0",
   "description": "the official fork of libphext-rs v0.1.7 for node",
   "source": "src/index.ts",
-  "main": "dist/index.js",
-  "module": "dist/module.js",
+  "main": "dist/libphext.js",
+  "module": "dist/libphext.js",
   "types": "dist/index.d.ts",
   "type": "module",
   "exports": {
     ".": {
-      "import": "./dist/libphext.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/libphext.js",
+      "default": "./dist/libphext.js"
     }
   },
   "files": [
