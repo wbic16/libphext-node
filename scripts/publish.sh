@@ -27,7 +27,17 @@ scripts/test.sh
 scripts/build.sh
 
 echo "--- npm publish --dry-run:"
-npm publish --dry-run
+DRY_RUN_OUTPUT="$(npm publish --dry-run 2>&1)"
+printf '%s\n' "$DRY_RUN_OUTPUT"
+
+# Guard: the tarball MUST ship the TypeScript declarations. v0.4.0 went
+# out without dist/index.d.ts (packed from a vite-only build) even though
+# package.json's "types" points at it. Refuse to proceed without them.
+if ! printf '%s\n' "$DRY_RUN_OUTPUT" | grep -q 'dist/index\.d\.ts'; then
+  echo "ERROR: dist/index.d.ts is missing from the tarball — will NOT publish."
+  echo "scripts/build.sh emits the declarations; make sure it ran in full."
+  exit 1
+fi
 
 echo "=================================================="
 echo "Ready to publish: ${NAME} v${VERSION} -> npm"
