@@ -33,11 +33,23 @@ trap 'rm -rf "$WORK"' EXIT
 APP="$WORK/app"
 mkdir -p "$APP/node_modules/libphext"
 
-"$TSC" src/index.ts --outDir "$APP/node_modules/libphext" --declaration \
-  --target ES2020 --module ES2020 --moduleResolution node --skipLibCheck
+# tsconfig.build.json carries the flags — including the "paths" mapping that
+# points 'xxh3-ts' at src/xxh3-ts.d.ts (the package's own shipped .ts sources
+# no longer compile under TS >= 5.7; see that file's header).
+"$TSC" -p tsconfig.build.json --outDir "$APP/node_modules/libphext"
 VERSION="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' package.json | head -1)"
 printf '{"name":"libphext","version":"%s","type":"module","main":"index.js","types":"index.d.ts","exports":{".":"./index.js"}}' "$VERSION" \
   > "$APP/node_modules/libphext/package.json"
+
+# The library's runtime dependencies must resolve inside the scratch app:
+# node module resolution walks up from node_modules/libphext, so link them
+# in from the repo's install. ('buffer' needs no link — it is a node core
+# module; xxh3-ts is a real package.)
+for dep in xxh3-ts; do
+  if [ -d "$REPO/node_modules/$dep" ]; then
+    ln -s "$REPO/node_modules/$dep" "$APP/node_modules/$dep"
+  fi
+done
 
 cp test-app/index.ts test-app/unit-test.phext "$APP/"
 ( cd "$APP" && "$TSC" index.ts --target ES2020 --module ES2020 \

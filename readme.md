@@ -35,6 +35,15 @@ implies 10^27 scrolls. Materializing, exploding, or indexing such a graph
 costs memory proportional to its populated scroll count. The old 999 cap
 never protected against this (999^9 was already unreachable); sparsity does.
 Keep graphs sparse.
+Checksum / Manifest
+-------------------
+`phext.checksum(text)` returns the XXH3-128 hash of the text's UTF-8 bytes
+as 32 lowercase hex characters, byte-identical to libphext-rs
+(xxhash-rust). `phext.manifest(doc)` replaces every scroll in a document
+with its checksum. The implementation is xxh3-ts, a pure-TypeScript port
+(no native code) verified against the Rust build on every XXH3 length
+class, multi-KB inputs, and unicode text.
+
 Explode / Implode
 -----------------
 `phext.explode(doc)` returns a `Map<string, string>` from canonical

@@ -104,7 +104,8 @@ class Tests {
         this.test_phext_index();
         this.test_utf8_offsets();
         this.test_explode_implode();
-        //this.test_scroll_manifest();
+        this.test_scroll_manifest();
+        this.test_checksum_vectors();
         this.test_phext_soundex_v1();
     };
 
@@ -1039,8 +1040,6 @@ class Tests {
         assert_eq("EI13", phext.implode(with_empty), doc, "implode drops empty scrolls (rs parity)");
     };
 
-    // holding off on checksums until xxh3 is patched to match v0.8.2
-        /*
     test_scroll_manifest = () => {
         const example = "first scroll\x17second scroll\x18second section\x19second chapter\x1Abook 2\x1Cvolume 2\x1Dcollection 2\x1Eseries 2\x1Fshelf 2\x01library 2";
         const result = phext.manifest(example);
@@ -1091,7 +1090,27 @@ class Tests {
 
         const expected = `${hash1}\x17${hash2}\x18${hash3}\x19${hash4}\x1A${hash5}\x1C${hash6}\x1D${hash7}\x1E${hash8}\x1F${hash9}\x01${hash10}`;
         assert_eq("SM11", result, expected, "Hierarchical Hash");
-    };*/
+    };
+
+    // XXH3-128 vectors measured live against libphext-rs (xxhash-rust 0.8.5),
+    // covering the XXH3 length classes and unicode input.
+    test_checksum_vectors = () => {
+        assert_eq("CSH1", phext.checksum(""), "99aa06d3014798d86001c324468d497f", "empty input");
+        assert_eq("CSH2", phext.checksum("hello"), "b5e9c1ad071b3e7fc779cfaa5e523818", "hello");
+
+        var big = "";
+        for (var i = 0; i < 300; ++i) { big += String.fromCharCode(97 + (i % 26)); }
+        assert_eq("CSH3", phext.checksum(big), "34de2aad60a7d7ca7f720c1f731c9648", "300 bytes (>240 class)");
+
+        var huge = "";
+        for (var j = 0; j < 5000; ++j) { huge += String.fromCharCode(97 + (j % 26)); }
+        assert_eq("CSH4", phext.checksum(huge), "0acf3f2690e48fadeb0f5845c1ec4cc2", "5000 bytes (multi-block)");
+
+        assert_eq("CSH5", phext.checksum("héllo wörld ☃"), "fdddf2262f35ef0b97db5888c682c8e9", "unicode input");
+        assert_eq("CSH6", phext.manifest("héllo\x17wörld"),
+                  "5c04d7f26e6ecfce2ad2fc5553253f9c\x1703433418f6c9a9177196812225aaf5a8",
+                  "manifest over unicode scrolls matches rs");
+    };
 
     test_phext_soundex_v1 = () => {
         const letters1 = "bpfv";

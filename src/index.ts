@@ -8,7 +8,7 @@
 // Web Site: https://phext.io/
 // -----------------------------------------------------------------------------------------------------------
 import { Buffer } from 'buffer';
-//import * as xxhash from 'xxh3-ts/xxh3';
+import * as xxhash from 'xxh3-ts';
 
 // The largest coordinate component a JS number holds exactly: 2^53 - 1.
 // Phext components are format-unbounded (libphext-rs uses u64/usize), but a
@@ -193,15 +193,20 @@ export class Phext {
   		return result;
 	};
 
-	// disabled for now - xxh3-ts needs to be patched for the 0.8.2 release
-	// xxhash-addon works, but fails in frontends like vite
-	/*
+	// XXH3-128 checksum, byte-identical to libphext-rs (xxhash-rust 0.8.5).
+	// This was disabled while xxh3-ts lagged the reference; xxh3-ts 2.0.1 (a
+	// pure-TS port, no native code — it bundles where xxhash-addon could not)
+	// reproduces rs exactly on every XXH3 length class: 0-3, 4-8, 9-16,
+	// 17-128, 129-240, >240 bytes, multi-KB, and unicode inputs, all measured
+	// against the rs build. It consumes a Node-style Buffer; in browsers the
+	// 'buffer' package (a dependency of this library) provides one.
 	checksum = (phext: string): string => {
 		const buffer = Buffer.from(phext);
 		const hash = xxhash.XXH3_128(buffer);
 		return hash.toString(16).padStart(32, '0');
 	};
 
+	// Replace every scroll in the document with its checksum — rs's manifest().
 	manifest = (phext: string): string => {
 		var phokens = this.phokenize(phext);
 		for (var i = 0; i < phokens.length; ++i) {
@@ -209,7 +214,7 @@ export class Phext {
 		}
 
 		return this.dephokenize(phokens);
-	};*/
+	};
 
 	soundex_internal = (buffer: string): number => {
 		var letter1 = "bpfv";
