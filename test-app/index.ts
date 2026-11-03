@@ -103,6 +103,7 @@ class Tests {
         this.test_textmap();
         this.test_phext_index();
         this.test_utf8_offsets();
+        this.test_explode_implode();
         //this.test_scroll_manifest();
         this.test_phext_soundex_v1();
     };
@@ -1001,6 +1002,41 @@ class Tests {
         assert_number_eq("UO4", phext.offset(doc3, phext.to_coordinate("1.1.1/1.1.1/1.1.2")), 4, "3-byte snowman + break");
         assert_number_eq("UO5", phext.offset(doc3, phext.to_coordinate("1.1.1/1.1.1/1.1.3")), 9, "byte offsets accumulate over multibyte scrolls");
         assert_eq("UO6", phext.index(doc3), "0\x174\x179", "index over multibyte scrolls");
+    };
+
+    // explode/implode (rs parity, Will 2026-11-02): phext <-> Map of
+    // canonical coordinate string -> scroll text, round-trip identity.
+    test_explode_implode = () => {
+        const doc = "alpha\x17beta\x18gamma";
+        const parts = phext.explode(doc);
+        assert_number_eq("EI1", parts.size, 3, "explode finds every scroll");
+        assert_eq("EI2", parts.get("1.1.1/1.1.1/1.1.1") ?? "<missing>", "alpha", "explode scroll 1");
+        assert_eq("EI3", parts.get("1.1.1/1.1.1/1.1.2") ?? "<missing>", "beta", "explode scroll 2");
+        assert_eq("EI4", parts.get("1.1.1/1.1.1/1.2.1") ?? "<missing>", "gamma", "explode scroll 3");
+        assert_eq("EI5", phext.implode(parts), doc, "implode(explode(doc)) is identity");
+
+        const gap = "A\x17\x17B";
+        const gparts = phext.explode(gap);
+        assert_number_eq("EI6", gparts.size, 2, "explode skips the empty slot");
+        assert_eq("EI7", gparts.get("1.1.1/1.1.1/1.1.3") ?? "<missing>", "B", "scroll after the gap keeps its coordinate");
+        assert_eq("EI8", phext.implode(gparts), gap, "round-trip preserves the gap");
+
+        var deep = phext.replace("", new Coordinate("1.1.1/1.1.1/1.1.1001"), "far");
+        deep = phext.replace(deep, new Coordinate("2.1.1/1.1.1/1.1.1"), "wide");
+        const dparts = phext.explode(deep);
+        assert_eq("EI9", dparts.get("1.1.1/1.1.1/1.1.1001") ?? "<missing>", "far", "explode past 999");
+        assert_eq("EI10", dparts.get("2.1.1/1.1.1/1.1.1") ?? "<missing>", "wide", "explode at library 2");
+        assert_eq("EI11", phext.implode(dparts), deep, "round-trip past 999 is identity");
+
+        const scrambled = new Map<string, string>();
+        scrambled.set("1.1.1/1.1.1/1.2.1", "gamma");
+        scrambled.set("1.1.1/1.1.1/1.1.1", "alpha");
+        scrambled.set("1.1.1/1.1.1/1.1.2", "beta");
+        assert_eq("EI12", phext.implode(scrambled), doc, "implode sorts by coordinate");
+
+        const with_empty = new Map<string, string>(scrambled);
+        with_empty.set("1.1.1/1.1.1/1.1.3", "");
+        assert_eq("EI13", phext.implode(with_empty), doc, "implode drops empty scrolls (rs parity)");
     };
 
     // holding off on checksums until xxh3 is patched to match v0.8.2

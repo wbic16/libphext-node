@@ -589,6 +589,38 @@ export class Phext {
 		return this.dephokenize(arr);
 	};
 
+	// Explode a phext document into a Map from canonical coordinate strings
+	// ("1.1.1/1.1.1/1.1.1") to scroll text — the JS counterpart of libphext-rs's
+	// explode(). rs keys a HashMap by Coordinate; a JS Map keys primitives by
+	// value, so the canonical string is the key here. Coordinate.to_string()
+	// produces it and new Coordinate(key) parses it back; Coordinate.equals()
+	// gives the value-equality story.
+	explode = (phext: string): Map<string, string> => {
+		var result = new Map<string, string>();
+		const phokens = this.phokenize(phext);
+		for (var i = 0; i < phokens.length; ++i) {
+			result.set(phokens[i].coord.to_string(), phokens[i].scroll);
+		}
+		return result;
+	};
+
+	// Serialize a Map of coordinate strings to scroll text back into a phext
+	// document — the counterpart of rs's implode(). Entries are sorted by
+	// coordinate before serialization. Entries with empty scroll text are
+	// dropped, exactly as rs's implode drops them via dephokenize.
+	implode = (map: Map<string, string>): string => {
+		var phokens = new Array<PositionedScroll>();
+		map.forEach((scroll, address) => {
+			phokens.push(new PositionedScroll(new Coordinate(address), scroll, new Coordinate(), ""));
+		});
+		phokens.sort((a, b) => {
+			if (a.coord.less_than(b.coord)) { return -1; }
+			if (a.coord.greater_than(b.coord)) { return 1; }
+			return 0;
+		});
+		return this.dephokenize(phokens);
+	};
+
 	to_coordinate = (address: string): Coordinate => {
 		var result = new Coordinate();
 		var index = 0;

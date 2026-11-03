@@ -35,6 +35,17 @@ implies 10^27 scrolls. Materializing, exploding, or indexing such a graph
 costs memory proportional to its populated scroll count. The old 999 cap
 never protected against this (999^9 was already unreachable); sparsity does.
 Keep graphs sparse.
+Explode / Implode
+-----------------
+`phext.explode(doc)` returns a `Map<string, string>` from canonical
+coordinate strings (`"1.1.1/1.1.1/1.1.1"`) to scroll text;
+`phext.implode(map)` serializes such a map back into a phext document
+(entries are sorted by coordinate; empty scrolls are dropped). These mirror
+libphext-rs's `explode`/`implode` — rs keys its HashMap by `Coordinate`,
+while JS keys this Map by the coordinate's canonical string
+(`Coordinate.to_string()` produces it, `new Coordinate(key)` parses it
+back). `implode(explode(doc))` is the identity on any phext document.
+
 Offsets
 -------
 `index()` and `offset()` report **UTF-8 byte offsets**, matching
