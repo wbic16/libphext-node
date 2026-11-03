@@ -12,6 +12,15 @@ Coordinates (since 0.4.0)
 Coordinate components are unbounded: any component >= 1 is valid, and walking
 breaks advances components past 999 (1000, 1001, ...) instead of saturating.
 
+Precision limit: components are JS numbers, so the largest component that is
+exactly representable is `MAX_COMPONENT = Number.MAX_SAFE_INTEGER`
+(9007199254740991, exported from the package and available as
+`phext.MAX_COMPONENT`). Parsing or advancing past it throws an error instead
+of silently rounding — 9007199254740993 would otherwise become
+9007199254740992 and address the wrong scroll. (libphext-rs, with u64/usize
+components, has no such limit; this is a JS-representation bound, not a
+format bound.)
+
 A computed address never carries NaN: in the `Coordinate` constructor and on
 every advance path, a NaN / non-numeric / empty component wraps to 1
 (`new Coordinate("HOME")` is `1.1.1/1.1.1/1.1.1`). `Phext.to_coordinate` is

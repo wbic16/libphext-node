@@ -10,8 +10,17 @@
 import { Buffer } from 'buffer';
 //import * as xxhash from 'xxh3-ts/xxh3';
 
+// The largest coordinate component a JS number holds exactly: 2^53 - 1.
+// Phext components are format-unbounded (libphext-rs uses u64/usize), but a
+// component past this limit cannot be represented exactly as a JS number —
+// 9007199254740993 would silently round to 9007199254740992 and address the
+// wrong scroll. Every parse and advance path therefore enforces this limit
+// with an error instead of rounding (Will, 2026-11-02).
+export const MAX_COMPONENT = Number.MAX_SAFE_INTEGER;
+
 export class Phext {
 	COORDINATE_MINIMUM: number;
+	MAX_COMPONENT: number;
 	LIBRARY_BREAK: string;
 	MORE_COWBELL: string;
 	LINE_BREAK: string;
@@ -28,6 +37,7 @@ export class Phext {
 	ADDRESS_MACRO_ALT: string;
 	constructor() {
 		this.COORDINATE_MINIMUM = 1;
+		this.MAX_COMPONENT = MAX_COMPONENT;
         this.LIBRARY_BREAK       = '\x01'; // 11D Break - replaces start of header
         this.MORE_COWBELL        = '\x07'; // i've got a fever, and the only prescription...is more cowbell!
         this.LINE_BREAK          = '\x0A'; // same as plain text \o/
@@ -606,6 +616,9 @@ export class Phext {
 			if (byte >= '0' && byte <= '9')
 			{
 				value = exp * value + parseInt(byte);
+				if (value > MAX_COMPONENT) {
+					throw new Error(`libphext: coordinate component in "${address}" exceeds MAX_COMPONENT (${MAX_COMPONENT}) — a JS number cannot represent it exactly`);
+				}
 				if (index == 0) { index = 1; }
 			}
 		}
@@ -619,8 +632,10 @@ export class Phext {
 }
 
 // A Coordinate is nine unbounded components (each >= 1): library.shelf.series /
-// collection.volume.book / chapter.section.scroll. Since 0.4.0 there is no upper
-// limit on any component.
+// collection.volume.book / chapter.section.scroll. Since 0.4.0 the format has no
+// upper limit; the only bound is MAX_COMPONENT (Number.MAX_SAFE_INTEGER), the
+// largest integer a JS number represents exactly — exceeding it is an error,
+// never a silent rounding.
 //
 // Dense graphs: phext is sparse by design. Coordinate components are unbounded,
 // but a fully-populated dense graph contains the product of its dimensions'
@@ -812,6 +827,9 @@ export class Coordinate {
 // accumulation can never produce NaN in the first place.)
 function sanitize_component(value: number): number {
 	if (Number.isNaN(value)) { return __internal_phext.COORDINATE_MINIMUM; }
+	if (value > MAX_COMPONENT) {
+		throw new Error(`libphext: coordinate component ${value} exceeds MAX_COMPONENT (${MAX_COMPONENT}) — a JS number cannot represent it exactly`);
+	}
 	if (value < __internal_phext.COORDINATE_MINIMUM) { return __internal_phext.COORDINATE_MINIMUM; }
 	return value;
 }

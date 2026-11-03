@@ -1,4 +1,4 @@
-import { Phext, Coordinate } from "libphext";
+import { Phext, Coordinate, MAX_COMPONENT } from "libphext";
 import * as fs from 'fs';
 
 const phext = new Phext();
@@ -55,6 +55,11 @@ function assert_true(tc: string, value: boolean, message: string = '') {
 function assert_false(tc: string, value: boolean, message: string = '') {
     assert_eq(tc, value ? 'true' : 'false', 'false', message);
 }
+function assert_throws(tc: string, fn: () => void, message: string = '') {
+    var threw = false;
+    try { fn(); } catch (e) { threw = true; }
+    assert_true(tc, threw, message);
+}
 
 class Tests {
     constructor() {
@@ -72,6 +77,7 @@ class Tests {
         // TODO: why aren't these being found by Object.keys?
         this.test_coordinate_parsing();
         this.test_no_nan_addresses();
+        this.test_precision_limit();
         this.test_to_urlencoded();
         this.test_scrolls();
         this.test_coordinate_validity();
@@ -126,6 +132,25 @@ class Tests {
         poisoned.library_break();
         assert_number_eq("NN7", poisoned.z.library, 1, "advance from NaN wraps to 1");
         assert_eq("NN8", poisoned.to_string(), "1.1.1/1.1.1/1.1.1", "no NaN survives an advance");
+    };
+
+    // Precision limit (Will, 2026-11-02): components are JS numbers, so the
+    // largest exactly-representable component is MAX_COMPONENT = 2^53 - 1.
+    // Exceeding it on any parse or advance path is an error, never a rounding.
+    test_precision_limit = () => {
+        assert_number_eq("PL0", MAX_COMPONENT, 9007199254740991, "MAX_COMPONENT is Number.MAX_SAFE_INTEGER");
+        assert_number_eq("PL1", phext.MAX_COMPONENT, 9007199254740991, "MAX_COMPONENT exposed on Phext");
+
+        const at_max = new Coordinate("9007199254740991.1.1/1.1.1/1.1.1");
+        assert_eq("PL2", at_max.to_string(), "9007199254740991.1.1/1.1.1/1.1.1", "MAX_COMPONENT works exactly");
+
+        assert_throws("PL3", () => { new Coordinate("9007199254740993.1.1/1.1.1/1.1.1"); }, "constructor rejects an unrepresentable component");
+        assert_throws("PL4", () => { phext.to_coordinate("1.1.1/1.1.1/1.1.9007199254740993"); }, "to_coordinate rejects an unrepresentable component");
+        assert_throws("PL5", () => { new Coordinate("1.1.1/1.1.1/1.1.9007199254740991").scroll_break(); }, "advance past MAX_COMPONENT throws");
+
+        const almost = new Coordinate("1.1.1/1.1.1/1.1.9007199254740990");
+        almost.scroll_break();
+        assert_number_eq("PL6", almost.x.scroll, 9007199254740991, "advance up to MAX_COMPONENT is exact");
     };
 
     test_to_urlencoded = () => {
