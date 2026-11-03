@@ -64,6 +64,17 @@ function assert_false(tc, value, message) {
     if (message === void 0) { message = ''; }
     assert_eq(tc, value ? 'true' : 'false', 'false', message);
 }
+function assert_throws(tc, fn, message) {
+    if (message === void 0) { message = ''; }
+    var threw = false;
+    try {
+        fn();
+    }
+    catch (e) {
+        threw = true;
+    }
+    assert_true(tc, threw, message);
+}
 var Tests = /** @class */ (function () {
     function Tests() {
         var _this = this;
@@ -78,6 +89,8 @@ var Tests = /** @class */ (function () {
             });*/
             // TODO: why aren't these being found by Object.keys?
             _this.test_coordinate_parsing();
+            _this.test_no_nan_addresses();
+            _this.test_precision_limit();
             _this.test_to_urlencoded();
             _this.test_scrolls();
             _this.test_coordinate_validity();
@@ -102,7 +115,10 @@ var Tests = /** @class */ (function () {
             _this.test_navmap();
             _this.test_textmap();
             _this.test_phext_index();
-            //this.test_scroll_manifest();
+            _this.test_utf8_offsets();
+            _this.test_explode_implode();
+            _this.test_scroll_manifest();
+            _this.test_checksum_vectors();
             _this.test_phext_soundex_v1();
         };
         this.test_coordinate_parsing = function () {
@@ -113,6 +129,36 @@ var Tests = /** @class */ (function () {
             var weird_coordinate = "HOME";
             var test_weird = phext.to_coordinate(weird_coordinate).to_string();
             assert_eq("CP", "1.1.1/1.1.1/1.1.1", test_weird, "Weird coordinate parsing failed");
+        };
+        // Will's rule (2026-11-02): a computed phext address never carries NaN —
+        // NaN / non-numeric components wrap to 1 on every parse and advance path.
+        this.test_no_nan_addresses = function () {
+            assert_eq("NN1", new libphext_1.Coordinate("HOME").to_string(), "1.1.1/1.1.1/1.1.1", "garbage address wraps to origin");
+            assert_eq("NN2", new libphext_1.Coordinate("a.b.c/d.e.f/g.h.i").to_string(), "1.1.1/1.1.1/1.1.1", "all-garbage components wrap to 1");
+            assert_eq("NN3", new libphext_1.Coordinate("5.x.3/1.1.1/1.1.1").to_string(), "5.1.3/1.1.1/1.1.1", "only the NaN component wraps");
+            assert_eq("NN4", new libphext_1.Coordinate("1..1/1.1.1/1.1.1").to_string(), "1.1.1/1.1.1/1.1.1", "empty segment wraps to 1");
+            assert_eq("NN5", phext.to_coordinate("HOME").to_string(), "1.1.1/1.1.1/1.1.1", "to_coordinate of garbage is origin");
+            assert_eq("NN6", phext.to_coordinate("x9x.x8x.x7x/x6x.x5x.x4x/x3x.x2x.x1x").to_string(), "9.8.7/6.5.4/3.2.1", "to_coordinate ignores non-digits, never NaN");
+            var poisoned = new libphext_1.Coordinate();
+            poisoned.z.library = NaN;
+            poisoned.library_break();
+            assert_number_eq("NN7", poisoned.z.library, 1, "advance from NaN wraps to 1");
+            assert_eq("NN8", poisoned.to_string(), "1.1.1/1.1.1/1.1.1", "no NaN survives an advance");
+        };
+        // Precision limit (Will, 2026-11-02): components are JS numbers, so the
+        // largest exactly-representable component is MAX_COMPONENT = 2^53 - 1.
+        // Exceeding it on any parse or advance path is an error, never a rounding.
+        this.test_precision_limit = function () {
+            assert_number_eq("PL0", libphext_1.MAX_COMPONENT, 9007199254740991, "MAX_COMPONENT is Number.MAX_SAFE_INTEGER");
+            assert_number_eq("PL1", phext.MAX_COMPONENT, 9007199254740991, "MAX_COMPONENT exposed on Phext");
+            var at_max = new libphext_1.Coordinate("9007199254740991.1.1/1.1.1/1.1.1");
+            assert_eq("PL2", at_max.to_string(), "9007199254740991.1.1/1.1.1/1.1.1", "MAX_COMPONENT works exactly");
+            assert_throws("PL3", function () { new libphext_1.Coordinate("9007199254740993.1.1/1.1.1/1.1.1"); }, "constructor rejects an unrepresentable component");
+            assert_throws("PL4", function () { phext.to_coordinate("1.1.1/1.1.1/1.1.9007199254740993"); }, "to_coordinate rejects an unrepresentable component");
+            assert_throws("PL5", function () { new libphext_1.Coordinate("1.1.1/1.1.1/1.1.9007199254740991").scroll_break(); }, "advance past MAX_COMPONENT throws");
+            var almost = new libphext_1.Coordinate("1.1.1/1.1.1/1.1.9007199254740990");
+            almost.scroll_break();
+            assert_number_eq("PL6", almost.x.scroll, 9007199254740991, "advance up to MAX_COMPONENT is exact");
         };
         this.test_to_urlencoded = function () {
             var sample1 = phext.to_coordinate("1.1.1/1.1.1/1.1.1");
@@ -601,59 +647,106 @@ var Tests = /** @class */ (function () {
             assert_number_eq("PI12", test_invalid, 103);
             assert_number_eq("PI13", example.length, 112);
         };
-        // holding off on checksums until xxh3 is patched to match v0.8.2
-        /*
-    test_scroll_manifest = () => {
-        const example = "first scroll\x17second scroll\x18second section\x19second chapter\x1Abook 2\x1Cvolume 2\x1Dcollection 2\x1Eseries 2\x1Fshelf 2\x01library 2";
-        const result = phext.manifest(example);
-
-        const scroll0 = "00000000000000000000";
-        const hash0 = phext.checksum(scroll0);
-        assert_eq("SM0", hash0, "7e79edd92a62a048e1cd24ffab542e34", "hash verification");
-
-        const scroll1 = "first scroll";
-        const hash1 = phext.checksum(scroll1);
-        assert_eq("SM1", hash1, "ba9d944e4967e29d48bae69ac2999699", "hash verification");
-
-        const scroll2 = "second scroll";
-        const hash2 = phext.checksum(scroll2);
-        assert_eq("SM2", hash2, "2fe1b2040314ac66f132dd3b4926157c", "hash verification");
-
-        const scroll3 = "second section";
-        const hash3 = phext.checksum(scroll3);
-        assert_eq("SM3", hash3, "fddb6916753b6f4e0b5281469134778b", "hash verification");
-
-        const scroll4 = "second chapter";
-        const hash4 = phext.checksum(scroll4);
-        assert_eq("SM4", hash4, "16ab5b1a0a997db95ec215a3bf2c57b3", "hash verification");
-
-        const scroll5 = "book 2";
-        const hash5 = phext.checksum(scroll5);
-        assert_eq("SM5", hash5, "0f20f79bf36f63e8fba25cc6765e2d0d", "hash verification");
-
-        const scroll6 = "volume 2";
-        const hash6 = phext.checksum(scroll6);
-        assert_eq("SM6", hash6, "7ead0c6fef43adb446fe3bda6fb0adc7", "hash verification");
-
-        const scroll7 = "collection 2";
-        const hash7 = phext.checksum(scroll7);
-        assert_eq("SM7", hash7, "78c12298931c6edede92962137a9280a", "hash verification");
-
-        const scroll8 = "series 2";
-        const hash8 = phext.checksum(scroll8);
-        assert_eq("SM8", hash8, "0f35100c84df601a490b7b63d7e8c0a8", "hash verification");
-
-        const scroll9 = "shelf 2";
-        const hash9 = phext.checksum(scroll9);
-        assert_eq("SM9", hash9, "3bbf7e67cb33d613a906bc5a3cbefd95", "hash verification");
-
-        const scroll10 = "library 2";
-        const hash10 = phext.checksum(scroll10);
-        assert_eq("SM10", hash10, "2e7fdd387196a8a2706ccb9ad6792bc3", "hash verification");
-
-        const expected = `${hash1}\x17${hash2}\x18${hash3}\x19${hash4}\x1A${hash5}\x1C${hash6}\x1D${hash7}\x1E${hash8}\x1F${hash9}\x01${hash10}`;
-        assert_eq("SM11", result, expected, "Hierarchical Hash");
-    };*/
+        // Offsets are UTF-8 byte offsets, matching libphext-rs (Will, 2026-11-02).
+        // JS string length counts UTF-16 code units and undercounts non-ASCII.
+        this.test_utf8_offsets = function () {
+            var doc = "héllo\x17wörld";
+            assert_number_eq("UO1", phext.offset(doc, phext.to_coordinate("1.1.1/1.1.1/1.1.1")), 0, "first scroll at byte 0");
+            assert_number_eq("UO2", phext.offset(doc, phext.to_coordinate("1.1.1/1.1.1/1.1.2")), 7, "second scroll at byte 7 (rs parity)");
+            assert_eq("UO3", phext.index(doc), "0\x177", "index carries byte offsets");
+            var doc3 = "☃\x17éé\x17x";
+            assert_number_eq("UO4", phext.offset(doc3, phext.to_coordinate("1.1.1/1.1.1/1.1.2")), 4, "3-byte snowman + break");
+            assert_number_eq("UO5", phext.offset(doc3, phext.to_coordinate("1.1.1/1.1.1/1.1.3")), 9, "byte offsets accumulate over multibyte scrolls");
+            assert_eq("UO6", phext.index(doc3), "0\x174\x179", "index over multibyte scrolls");
+        };
+        // explode/implode (rs parity, Will 2026-11-02): phext <-> Map of
+        // canonical coordinate string -> scroll text, round-trip identity.
+        this.test_explode_implode = function () {
+            var _a, _b, _c, _d, _e, _f;
+            var doc = "alpha\x17beta\x18gamma";
+            var parts = phext.explode(doc);
+            assert_number_eq("EI1", parts.size, 3, "explode finds every scroll");
+            assert_eq("EI2", (_a = parts.get("1.1.1/1.1.1/1.1.1")) !== null && _a !== void 0 ? _a : "<missing>", "alpha", "explode scroll 1");
+            assert_eq("EI3", (_b = parts.get("1.1.1/1.1.1/1.1.2")) !== null && _b !== void 0 ? _b : "<missing>", "beta", "explode scroll 2");
+            assert_eq("EI4", (_c = parts.get("1.1.1/1.1.1/1.2.1")) !== null && _c !== void 0 ? _c : "<missing>", "gamma", "explode scroll 3");
+            assert_eq("EI5", phext.implode(parts), doc, "implode(explode(doc)) is identity");
+            var gap = "A\x17\x17B";
+            var gparts = phext.explode(gap);
+            assert_number_eq("EI6", gparts.size, 2, "explode skips the empty slot");
+            assert_eq("EI7", (_d = gparts.get("1.1.1/1.1.1/1.1.3")) !== null && _d !== void 0 ? _d : "<missing>", "B", "scroll after the gap keeps its coordinate");
+            assert_eq("EI8", phext.implode(gparts), gap, "round-trip preserves the gap");
+            var deep = phext.replace("", new libphext_1.Coordinate("1.1.1/1.1.1/1.1.1001"), "far");
+            deep = phext.replace(deep, new libphext_1.Coordinate("2.1.1/1.1.1/1.1.1"), "wide");
+            var dparts = phext.explode(deep);
+            assert_eq("EI9", (_e = dparts.get("1.1.1/1.1.1/1.1.1001")) !== null && _e !== void 0 ? _e : "<missing>", "far", "explode past 999");
+            assert_eq("EI10", (_f = dparts.get("2.1.1/1.1.1/1.1.1")) !== null && _f !== void 0 ? _f : "<missing>", "wide", "explode at library 2");
+            assert_eq("EI11", phext.implode(dparts), deep, "round-trip past 999 is identity");
+            var scrambled = new Map();
+            scrambled.set("1.1.1/1.1.1/1.2.1", "gamma");
+            scrambled.set("1.1.1/1.1.1/1.1.1", "alpha");
+            scrambled.set("1.1.1/1.1.1/1.1.2", "beta");
+            assert_eq("EI12", phext.implode(scrambled), doc, "implode sorts by coordinate");
+            var with_empty = new Map(scrambled);
+            with_empty.set("1.1.1/1.1.1/1.1.3", "");
+            assert_eq("EI13", phext.implode(with_empty), doc, "implode drops empty scrolls (rs parity)");
+        };
+        this.test_scroll_manifest = function () {
+            var example = "first scroll\x17second scroll\x18second section\x19second chapter\x1Abook 2\x1Cvolume 2\x1Dcollection 2\x1Eseries 2\x1Fshelf 2\x01library 2";
+            var result = phext.manifest(example);
+            var scroll0 = "00000000000000000000";
+            var hash0 = phext.checksum(scroll0);
+            assert_eq("SM0", hash0, "7e79edd92a62a048e1cd24ffab542e34", "hash verification");
+            var scroll1 = "first scroll";
+            var hash1 = phext.checksum(scroll1);
+            assert_eq("SM1", hash1, "ba9d944e4967e29d48bae69ac2999699", "hash verification");
+            var scroll2 = "second scroll";
+            var hash2 = phext.checksum(scroll2);
+            assert_eq("SM2", hash2, "2fe1b2040314ac66f132dd3b4926157c", "hash verification");
+            var scroll3 = "second section";
+            var hash3 = phext.checksum(scroll3);
+            assert_eq("SM3", hash3, "fddb6916753b6f4e0b5281469134778b", "hash verification");
+            var scroll4 = "second chapter";
+            var hash4 = phext.checksum(scroll4);
+            assert_eq("SM4", hash4, "16ab5b1a0a997db95ec215a3bf2c57b3", "hash verification");
+            var scroll5 = "book 2";
+            var hash5 = phext.checksum(scroll5);
+            assert_eq("SM5", hash5, "0f20f79bf36f63e8fba25cc6765e2d0d", "hash verification");
+            var scroll6 = "volume 2";
+            var hash6 = phext.checksum(scroll6);
+            assert_eq("SM6", hash6, "7ead0c6fef43adb446fe3bda6fb0adc7", "hash verification");
+            var scroll7 = "collection 2";
+            var hash7 = phext.checksum(scroll7);
+            assert_eq("SM7", hash7, "78c12298931c6edede92962137a9280a", "hash verification");
+            var scroll8 = "series 2";
+            var hash8 = phext.checksum(scroll8);
+            assert_eq("SM8", hash8, "0f35100c84df601a490b7b63d7e8c0a8", "hash verification");
+            var scroll9 = "shelf 2";
+            var hash9 = phext.checksum(scroll9);
+            assert_eq("SM9", hash9, "3bbf7e67cb33d613a906bc5a3cbefd95", "hash verification");
+            var scroll10 = "library 2";
+            var hash10 = phext.checksum(scroll10);
+            assert_eq("SM10", hash10, "2e7fdd387196a8a2706ccb9ad6792bc3", "hash verification");
+            var expected = "".concat(hash1, "\u0017").concat(hash2, "\u0018").concat(hash3, "\u0019").concat(hash4, "\u001A").concat(hash5, "\u001C").concat(hash6, "\u001D").concat(hash7, "\u001E").concat(hash8, "\u001F").concat(hash9, "\u0001").concat(hash10);
+            assert_eq("SM11", result, expected, "Hierarchical Hash");
+        };
+        // XXH3-128 vectors measured live against libphext-rs (xxhash-rust 0.8.5),
+        // covering the XXH3 length classes and unicode input.
+        this.test_checksum_vectors = function () {
+            assert_eq("CSH1", phext.checksum(""), "99aa06d3014798d86001c324468d497f", "empty input");
+            assert_eq("CSH2", phext.checksum("hello"), "b5e9c1ad071b3e7fc779cfaa5e523818", "hello");
+            var big = "";
+            for (var i = 0; i < 300; ++i) {
+                big += String.fromCharCode(97 + (i % 26));
+            }
+            assert_eq("CSH3", phext.checksum(big), "34de2aad60a7d7ca7f720c1f731c9648", "300 bytes (>240 class)");
+            var huge = "";
+            for (var j = 0; j < 5000; ++j) {
+                huge += String.fromCharCode(97 + (j % 26));
+            }
+            assert_eq("CSH4", phext.checksum(huge), "0acf3f2690e48fadeb0f5845c1ec4cc2", "5000 bytes (multi-block)");
+            assert_eq("CSH5", phext.checksum("héllo wörld ☃"), "fdddf2262f35ef0b97db5888c682c8e9", "unicode input");
+            assert_eq("CSH6", phext.manifest("héllo\x17wörld"), "5c04d7f26e6ecfce2ad2fc5553253f9c\x1703433418f6c9a9177196812225aaf5a8", "manifest over unicode scrolls matches rs");
+        };
         this.test_phext_soundex_v1 = function () {
             var letters1 = "bpfv";
             var precheck1 = phext.soundex_internal(letters1);
