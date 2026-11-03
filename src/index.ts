@@ -639,15 +639,20 @@ export class Coordinate {
 		this.x = new XCoordinate(1,1,1);
 		if (value.length > 0) {
 			var parts = value.replace(/\//g, '.').split('.');
-			if (parts.length >= 1) { this.z.library = parseInt(parts[0]); if (this.z.library < 1) { this.z.library = 1; }}
-			if (parts.length >= 2) { this.z.shelf = parseInt(parts[1]); if (this.z.shelf < 1) { this.z.shelf = 1; }}
-			if (parts.length >= 3) { this.z.series = parseInt(parts[2]); if (this.z.series < 1) { this.z.series = 1; }}
-			if (parts.length >= 4) { this.y.collection = parseInt(parts[3]); if (this.y.collection < 1) { this.y.collection = 1; }}
-			if (parts.length >= 5) { this.y.volume = parseInt(parts[4]); if (this.y.volume < 1) { this.y.volume = 1; }}
-			if (parts.length >= 6) { this.y.book = parseInt(parts[5]); if (this.y.book < 1) { this.y.book = 1; }}
-			if (parts.length >= 7) { this.x.chapter = parseInt(parts[6]); if (this.x.chapter < 1) { this.x.chapter = 1; }}
-			if (parts.length >= 8) { this.x.section = parseInt(parts[7]); if (this.x.section < 1) { this.x.section = 1; }}
-			if (parts.length >= 9) { this.x.scroll = parseInt(parts[8]); if (this.x.scroll < 1) { this.x.scroll = 1; }}
+			var fields = [
+				(n: number) => { this.z.library = n; },
+				(n: number) => { this.z.shelf = n; },
+				(n: number) => { this.z.series = n; },
+				(n: number) => { this.y.collection = n; },
+				(n: number) => { this.y.volume = n; },
+				(n: number) => { this.y.book = n; },
+				(n: number) => { this.x.chapter = n; },
+				(n: number) => { this.x.section = n; },
+				(n: number) => { this.x.scroll = n; },
+			];
+			for (var i = 0; i < parts.length && i < fields.length; ++i) {
+				fields[i](sanitize_component(parseInt(parts[i])));
+			}
 		}
 	}
 
@@ -747,7 +752,8 @@ export class Coordinate {
 	}
 
 	advance_coordinate = (index: number): number => {
-		return index + 1;
+		if (Number.isNaN(index)) { return __internal_phext.COORDINATE_MINIMUM; }
+		return sanitize_component(index + 1);
 	};
 
 	library_break = (): void => {
@@ -795,6 +801,19 @@ export class Coordinate {
 	scroll_break = (): void => {
 		this.x.scroll = this.advance_coordinate(this.x.scroll);
 	};
+}
+
+// Sanitize a computed coordinate component (Will's rule, 2026-11-02): a phext
+// address never carries NaN. A NaN component — from non-numeric input, an empty
+// segment, or a poisoned advance — wraps to COORDINATE_MINIMUM (1), as does any
+// value below the minimum. The constructor and the advance paths funnel through
+// here. (Phext.to_coordinate is exempt by design: it mirrors rs, where explicit
+// 0 components form the documented "null coordinate" — and its digit-only
+// accumulation can never produce NaN in the first place.)
+function sanitize_component(value: number): number {
+	if (Number.isNaN(value)) { return __internal_phext.COORDINATE_MINIMUM; }
+	if (value < __internal_phext.COORDINATE_MINIMUM) { return __internal_phext.COORDINATE_MINIMUM; }
+	return value;
 }
 
 // internal static data

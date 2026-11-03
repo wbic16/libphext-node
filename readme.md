@@ -12,6 +12,13 @@ Coordinates (since 0.4.0)
 Coordinate components are unbounded: any component >= 1 is valid, and walking
 breaks advances components past 999 (1000, 1001, ...) instead of saturating.
 
+A computed address never carries NaN: in the `Coordinate` constructor and on
+every advance path, a NaN / non-numeric / empty component wraps to 1
+(`new Coordinate("HOME")` is `1.1.1/1.1.1/1.1.1`). `Phext.to_coordinate` is
+deliberately exempt — it mirrors libphext-rs, where explicit 0 components form
+the documented "null coordinate", and its digit-only accumulation cannot
+produce NaN.
+
 Dense graphs: phext is sparse by design. Coordinate components are unbounded,
 but a fully-populated dense graph contains the product of its dimensions'
 extents in scrolls — a dense block spanning 1000 in each of 9 dimensions

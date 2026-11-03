@@ -71,6 +71,7 @@ class Tests {
 
         // TODO: why aren't these being found by Object.keys?
         this.test_coordinate_parsing();
+        this.test_no_nan_addresses();
         this.test_to_urlencoded();
         this.test_scrolls();
         this.test_coordinate_validity();
@@ -108,6 +109,23 @@ class Tests {
         const weird_coordinate = "HOME";
         const test_weird = phext.to_coordinate(weird_coordinate).to_string();
         assert_eq("CP", "1.1.1/1.1.1/1.1.1", test_weird, "Weird coordinate parsing failed");
+    };
+
+    // Will's rule (2026-11-02): a computed phext address never carries NaN —
+    // NaN / non-numeric components wrap to 1 on every parse and advance path.
+    test_no_nan_addresses = () => {
+        assert_eq("NN1", new Coordinate("HOME").to_string(), "1.1.1/1.1.1/1.1.1", "garbage address wraps to origin");
+        assert_eq("NN2", new Coordinate("a.b.c/d.e.f/g.h.i").to_string(), "1.1.1/1.1.1/1.1.1", "all-garbage components wrap to 1");
+        assert_eq("NN3", new Coordinate("5.x.3/1.1.1/1.1.1").to_string(), "5.1.3/1.1.1/1.1.1", "only the NaN component wraps");
+        assert_eq("NN4", new Coordinate("1..1/1.1.1/1.1.1").to_string(), "1.1.1/1.1.1/1.1.1", "empty segment wraps to 1");
+        assert_eq("NN5", phext.to_coordinate("HOME").to_string(), "1.1.1/1.1.1/1.1.1", "to_coordinate of garbage is origin");
+        assert_eq("NN6", phext.to_coordinate("x9x.x8x.x7x/x6x.x5x.x4x/x3x.x2x.x1x").to_string(), "9.8.7/6.5.4/3.2.1", "to_coordinate ignores non-digits, never NaN");
+
+        const poisoned = new Coordinate();
+        poisoned.z.library = NaN;
+        poisoned.library_break();
+        assert_number_eq("NN7", poisoned.z.library, 1, "advance from NaN wraps to 1");
+        assert_eq("NN8", poisoned.to_string(), "1.1.1/1.1.1/1.1.1", "no NaN survives an advance");
     };
 
     test_to_urlencoded = () => {
