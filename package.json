@@ -1,15 +1,17 @@
 {
   "name": "libphext",
-  "version": "0.1.10",
+  "version": "0.4.0",
   "description": "the official fork of libphext-rs v0.1.7 for node",
   "source": "src/index.ts",
-  "main": "dist/index.js",
-  "module": "dist/module.js",
+  "main": "dist/libphext.js",
+  "module": "dist/libphext.js",
   "types": "dist/index.d.ts",
   "type": "module",
   "exports": {
     ".": {
-      "import": "./dist/libphext.js"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/libphext.js",
+      "default": "./dist/libphext.js"
     }
   },
   "files": [
@@ -37,13 +39,14 @@
   },
   "homepage": "https://github.com/wbic16/libphext-node#readme",
   "dependencies": {
-    "parcel": "^2.12.0"
+    "buffer": "^6.0.3",
+    "xxh3-ts": "^2.0.1"
   },
   "devDependencies": {
     "@parcel/packager-ts": "^2.8.3",
     "@parcel/transformer-typescript-types": "^2.8.3",
     "@types/node": "^22.5.3",
-    "parcel": "2.8.3",
+    "parcel": "^2.16.4",
     "typescript": "^5.8.3",
     "vite": "^6.2.5"
   }

@@ -8,11 +8,19 @@
 // Web Site: https://phext.io/
 // -----------------------------------------------------------------------------------------------------------
 import { Buffer } from 'buffer';
-//import * as xxhash from 'xxh3-ts/xxh3';
+import * as xxhash from 'xxh3-ts';
+
+// The largest coordinate component a JS number holds exactly: 2^53 - 1.
+// Phext components are format-unbounded (libphext-rs uses u64/usize), but a
+// component past this limit cannot be represented exactly as a JS number —
+// 9007199254740993 would silently round to 9007199254740992 and address the
+// wrong scroll. Every parse and advance path therefore enforces this limit
+// with an error instead of rounding (Will, 2026-11-02).
+export const MAX_COMPONENT = Number.MAX_SAFE_INTEGER;
 
 export class Phext {
 	COORDINATE_MINIMUM: number;
-	COORDINATE_MAXIMUM: number;
+	MAX_COMPONENT: number;
 	LIBRARY_BREAK: string;
 	MORE_COWBELL: string;
 	LINE_BREAK: string;
@@ -29,7 +37,7 @@ export class Phext {
 	ADDRESS_MACRO_ALT: string;
 	constructor() {
 		this.COORDINATE_MINIMUM = 1;
-		this.COORDINATE_MAXIMUM = 1000;
+		this.MAX_COMPONENT = MAX_COMPONENT;
         this.LIBRARY_BREAK       = '\x01'; // 11D Break - replaces start of header
         this.MORE_COWBELL        = '\x07'; // i've got a fever, and the only prescription...is more cowbell!
         this.LINE_BREAK          = '\x0A'; // same as plain text \o/
@@ -185,15 +193,20 @@ export class Phext {
   		return result;
 	};
 
-	// disabled for now - xxh3-ts needs to be patched for the 0.8.2 release
-	// xxhash-addon works, but fails in frontends like vite
-	/*
+	// XXH3-128 checksum, byte-identical to libphext-rs (xxhash-rust 0.8.5).
+	// This was disabled while xxh3-ts lagged the reference; xxh3-ts 2.0.1 (a
+	// pure-TS port, no native code — it bundles where xxhash-addon could not)
+	// reproduces rs exactly on every XXH3 length class: 0-3, 4-8, 9-16,
+	// 17-128, 129-240, >240 bytes, multi-KB, and unicode inputs, all measured
+	// against the rs build. It consumes a Node-style Buffer; in browsers the
+	// 'buffer' package (a dependency of this library) provides one.
 	checksum = (phext: string): string => {
 		const buffer = Buffer.from(phext);
 		const hash = xxhash.XXH3_128(buffer);
 		return hash.toString(16).padStart(32, '0');
 	};
 
+	// Replace every scroll in the document with its checksum — rs's manifest().
 	manifest = (phext: string): string => {
 		var phokens = this.phokenize(phext);
 		for (var i = 0; i < phokens.length; ++i) {
@@ -201,7 +214,7 @@ export class Phext {
 		}
 
 		return this.dephokenize(phokens);
-	};*/
+	};
 
 	soundex_internal = (buffer: string): number => {
 		var letter1 = "bpfv";
@@ -246,10 +259,10 @@ export class Phext {
 		var output = new Array();
 		for (var i = 0; i < phokens.length; ++i) {
 		  const delims = coord.advance_to(phokens[i].coord);
-		  offset += delims.length;
+		  offset += utf8_length(delims);
 		  const new_coord = new Coordinate(coord.to_string());
 		  output.push(new PositionedScroll(new_coord, `${offset}`, new_coord, ""));
-		  offset += phokens[i].scroll.length;
+		  offset += utf8_length(phokens[i].scroll);
 		}
 
 		return output;
@@ -581,6 +594,38 @@ export class Phext {
 		return this.dephokenize(arr);
 	};
 
+	// Explode a phext document into a Map from canonical coordinate strings
+	// ("1.1.1/1.1.1/1.1.1") to scroll text — the JS counterpart of libphext-rs's
+	// explode(). rs keys a HashMap by Coordinate; a JS Map keys primitives by
+	// value, so the canonical string is the key here. Coordinate.to_string()
+	// produces it and new Coordinate(key) parses it back; Coordinate.equals()
+	// gives the value-equality story.
+	explode = (phext: string): Map<string, string> => {
+		var result = new Map<string, string>();
+		const phokens = this.phokenize(phext);
+		for (var i = 0; i < phokens.length; ++i) {
+			result.set(phokens[i].coord.to_string(), phokens[i].scroll);
+		}
+		return result;
+	};
+
+	// Serialize a Map of coordinate strings to scroll text back into a phext
+	// document — the counterpart of rs's implode(). Entries are sorted by
+	// coordinate before serialization. Entries with empty scroll text are
+	// dropped, exactly as rs's implode drops them via dephokenize.
+	implode = (map: Map<string, string>): string => {
+		var phokens = new Array<PositionedScroll>();
+		map.forEach((scroll, address) => {
+			phokens.push(new PositionedScroll(new Coordinate(address), scroll, new Coordinate(), ""));
+		});
+		phokens.sort((a, b) => {
+			if (a.coord.less_than(b.coord)) { return -1; }
+			if (a.coord.greater_than(b.coord)) { return 1; }
+			return 0;
+		});
+		return this.dephokenize(phokens);
+	};
+
 	to_coordinate = (address: string): Coordinate => {
 		var result = new Coordinate();
 		var index = 0;
@@ -593,14 +638,14 @@ export class Phext {
 				byte == this.ADDRESS_MACRO_BREAK ||
 				byte == this.ADDRESS_MACRO_ALT) {
 				switch (index) {
-				  case 1: result.z.library = value; index += 1; break;
-				  case 2: result.z.shelf = value; index += 1; break;
-				  case 3: result.z.series = value; index += 1; break;
-				  case 4: result.y.collection = value; index += 1; break;
-				  case 5: result.y.volume = value; index += 1; break;
-				  case 6: result.y.book = value; index += 1; break;
-				  case 7: result.x.chapter = value; index += 1; break;
-				  case 8: result.x.section = value; index += 1; break;
+				  case 1: result.z.library = sanitize_component(value); index += 1; break;
+				  case 2: result.z.shelf = sanitize_component(value); index += 1; break;
+				  case 3: result.z.series = sanitize_component(value); index += 1; break;
+				  case 4: result.y.collection = sanitize_component(value); index += 1; break;
+				  case 5: result.y.volume = sanitize_component(value); index += 1; break;
+				  case 6: result.y.book = sanitize_component(value); index += 1; break;
+				  case 7: result.x.chapter = sanitize_component(value); index += 1; break;
+				  case 8: result.x.section = sanitize_component(value); index += 1; break;
 				}
 				value = 0;
 			}
@@ -608,18 +653,34 @@ export class Phext {
 			if (byte >= '0' && byte <= '9')
 			{
 				value = exp * value + parseInt(byte);
+				if (value > MAX_COMPONENT) {
+					throw new Error(`libphext: coordinate component in "${address}" exceeds MAX_COMPONENT (${MAX_COMPONENT}) — a JS number cannot represent it exactly`);
+				}
 				if (index == 0) { index = 1; }
 			}
 		}
 
   		if (index > 0) {
-    		result.x.scroll = value;
+    		result.x.scroll = sanitize_component(value);
   		}
 
   		return result;
 	};
 }
 
+// A Coordinate is nine unbounded components (each >= 1): library.shelf.series /
+// collection.volume.book / chapter.section.scroll. Since 0.4.0 the format has no
+// upper limit; the only bound is MAX_COMPONENT (Number.MAX_SAFE_INTEGER), the
+// largest integer a JS number represents exactly — exceeding it is an error,
+// never a silent rounding.
+//
+// Dense graphs: phext is sparse by design. Coordinate components are unbounded,
+// but a fully-populated dense graph contains the product of its dimensions'
+// extents in scrolls — a dense block spanning 1000 in each of 9 dimensions
+// implies 10^27 scrolls. Materializing, exploding, or indexing such a graph
+// costs memory proportional to its populated scroll count. The old 999 cap
+// never protected against this (999^9 was already unreachable); sparsity does.
+// Keep graphs sparse.
 export class Coordinate {
 	z: ZCoordinate;
 	y: YCoordinate;
@@ -630,15 +691,20 @@ export class Coordinate {
 		this.x = new XCoordinate(1,1,1);
 		if (value.length > 0) {
 			var parts = value.replace(/\//g, '.').split('.');
-			if (parts.length >= 1) { this.z.library = parseInt(parts[0]); if (this.z.library < 1) { this.z.library = 1; }}
-			if (parts.length >= 2) { this.z.shelf = parseInt(parts[1]); if (this.z.shelf < 1) { this.z.shelf = 1; }}
-			if (parts.length >= 3) { this.z.series = parseInt(parts[2]); if (this.z.series < 1) { this.z.series = 1; }}
-			if (parts.length >= 4) { this.y.collection = parseInt(parts[3]); if (this.y.collection < 1) { this.y.collection = 1; }}
-			if (parts.length >= 5) { this.y.volume = parseInt(parts[4]); if (this.y.volume < 1) { this.y.volume = 1; }}
-			if (parts.length >= 6) { this.y.book = parseInt(parts[5]); if (this.y.book < 1) { this.y.book = 1; }}
-			if (parts.length >= 7) { this.x.chapter = parseInt(parts[6]); if (this.x.chapter < 1) { this.x.chapter = 1; }}
-			if (parts.length >= 8) { this.x.section = parseInt(parts[7]); if (this.x.section < 1) { this.x.section = 1; }}
-			if (parts.length >= 9) { this.x.scroll = parseInt(parts[8]); if (this.x.scroll < 1) { this.x.scroll = 1; }}
+			var fields = [
+				(n: number) => { this.z.library = n; },
+				(n: number) => { this.z.shelf = n; },
+				(n: number) => { this.z.series = n; },
+				(n: number) => { this.y.collection = n; },
+				(n: number) => { this.y.volume = n; },
+				(n: number) => { this.y.book = n; },
+				(n: number) => { this.x.chapter = n; },
+				(n: number) => { this.x.section = n; },
+				(n: number) => { this.x.scroll = n; },
+			];
+			for (var i = 0; i < parts.length && i < fields.length; ++i) {
+				fields[i](sanitize_component(parseInt(parts[i])));
+			}
 		}
 	}
 
@@ -713,7 +779,7 @@ export class Coordinate {
 	};
 
 	validate_index = (index: number): boolean => {
-		return index >= __internal_phext.COORDINATE_MINIMUM && index <= __internal_phext.COORDINATE_MAXIMUM;
+		return index >= __internal_phext.COORDINATE_MINIMUM;
   	};
 
 	validate_coordinate = (): boolean => {
@@ -738,12 +804,8 @@ export class Coordinate {
 	}
 
 	advance_coordinate = (index: number): number => {
-		var next = index + 1;
-		if (next < __internal_phext.COORDINATE_MAXIMUM) {
-			return next;
-		}
-
-		return index;
+		if (Number.isNaN(index)) { return __internal_phext.COORDINATE_MINIMUM; }
+		return sanitize_component(index + 1);
 	};
 
 	library_break = (): void => {
@@ -793,6 +855,38 @@ export class Coordinate {
 	};
 }
 
+// UTF-8 byte length of a string — the unit libphext-rs measures scroll
+// offsets in (Rust str::len is a byte count). JS string length counts UTF-16
+// code units and silently undercounts every non-ASCII scroll, so index/offset
+// measure with this instead. Audit note: the only other length arithmetic in
+// this file feeds substring() slicing (get_subspace_coordinates, fetch,
+// insert, range_replace), where UTF-16 indices are internally consistent and
+// the strings produced are identical to rs; offset() is the sole place a
+// numeric offset escapes the library, through index_phokens.
+const __utf8_encoder = new TextEncoder();
+function utf8_length(text: string): number {
+	return __utf8_encoder.encode(text).length;
+}
+
+// Sanitize a computed coordinate component (Will's rules, 2026-11-02): no
+// phext coordinate component can ever be less than 1 — coordinates are 1-based
+// by definition — and a phext address never carries NaN. A NaN component (from
+// non-numeric input, an empty segment, or a poisoned advance) wraps to
+// COORDINATE_MINIMUM (1), as does 0 and any other value below the minimum.
+// EVERY path that produces a component funnels through here: the Coordinate
+// constructor, Phext.to_coordinate, the advance paths, and the X/Y/Z sub-
+// coordinate constructors. There is no "null coordinate": until Will's
+// floor ruling, to_coordinate preserved explicit 0 components (mirroring rs);
+// that exception is removed — 0 wraps to 1 exactly like NaN.
+function sanitize_component(value: number): number {
+	if (Number.isNaN(value)) { return __internal_phext.COORDINATE_MINIMUM; }
+	if (value > MAX_COMPONENT) {
+		throw new Error(`libphext: coordinate component ${value} exceeds MAX_COMPONENT (${MAX_COMPONENT}) — a JS number cannot represent it exactly`);
+	}
+	if (value < __internal_phext.COORDINATE_MINIMUM) { return __internal_phext.COORDINATE_MINIMUM; }
+	return value;
+}
+
 // internal static data
 var __internal_phext = new Phext(); // for constants
 
@@ -838,9 +932,9 @@ class ZCoordinate {
 	shelf: number;
 	series: number;
 	constructor(library: number = 1, shelf: number = 1, series: number = 1) {
-		this.library = library;
-		this.shelf = shelf;
-		this.series = series;
+		this.library = sanitize_component(library);
+		this.shelf = sanitize_component(shelf);
+		this.series = sanitize_component(series);
 	}
 }
 
@@ -849,9 +943,9 @@ class YCoordinate {
 	volume: number;
 	book: number;
 	constructor(collection: number = 1, volume: number = 1, book: number = 1) {
-		this.collection = collection;
-		this.volume = volume;
-		this.book = book;
+		this.collection = sanitize_component(collection);
+		this.volume = sanitize_component(volume);
+		this.book = sanitize_component(book);
 	}
 }
 
@@ -860,8 +954,8 @@ class XCoordinate {
 	section: number;
 	scroll: number;
 	constructor(chapter: number = 1, section: number = 1, scroll: number = 1) {
-		this.chapter = chapter;
-		this.section = section;
-		this.scroll = scroll;
+		this.chapter = sanitize_component(chapter);
+		this.section = sanitize_component(section);
+		this.scroll = sanitize_component(scroll);
 	}
 }

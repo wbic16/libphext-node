@@ -64,6 +64,17 @@ function assert_false(tc, value, message) {
     if (message === void 0) { message = ''; }
     assert_eq(tc, value ? 'true' : 'false', 'false', message);
 }
+function assert_throws(tc, fn, message) {
+    if (message === void 0) { message = ''; }
+    var threw = false;
+    try {
+        fn();
+    }
+    catch (e) {
+        threw = true;
+    }
+    assert_true(tc, threw, message);
+}
 var Tests = /** @class */ (function () {
     function Tests() {
         var _this = this;
@@ -78,9 +89,13 @@ var Tests = /** @class */ (function () {
             });*/
             // TODO: why aren't these being found by Object.keys?
             _this.test_coordinate_parsing();
+            _this.test_no_nan_addresses();
+            _this.test_precision_limit();
             _this.test_to_urlencoded();
             _this.test_scrolls();
             _this.test_coordinate_validity();
+            _this.test_coordinate_floor();
+            _this.test_coordinate_unbounded();
             _this.test_coordinate_based_insert();
             _this.test_coordinate_based_remove();
             _this.test_coordinate_based_replace();
@@ -101,7 +116,10 @@ var Tests = /** @class */ (function () {
             _this.test_navmap();
             _this.test_textmap();
             _this.test_phext_index();
-            //this.test_scroll_manifest();
+            _this.test_utf8_offsets();
+            _this.test_explode_implode();
+            _this.test_scroll_manifest();
+            _this.test_checksum_vectors();
             _this.test_phext_soundex_v1();
         };
         this.test_coordinate_parsing = function () {
@@ -112,6 +130,36 @@ var Tests = /** @class */ (function () {
             var weird_coordinate = "HOME";
             var test_weird = phext.to_coordinate(weird_coordinate).to_string();
             assert_eq("CP", "1.1.1/1.1.1/1.1.1", test_weird, "Weird coordinate parsing failed");
+        };
+        // Will's rule (2026-11-02): a computed phext address never carries NaN —
+        // NaN / non-numeric components wrap to 1 on every parse and advance path.
+        this.test_no_nan_addresses = function () {
+            assert_eq("NN1", new libphext_1.Coordinate("HOME").to_string(), "1.1.1/1.1.1/1.1.1", "garbage address wraps to origin");
+            assert_eq("NN2", new libphext_1.Coordinate("a.b.c/d.e.f/g.h.i").to_string(), "1.1.1/1.1.1/1.1.1", "all-garbage components wrap to 1");
+            assert_eq("NN3", new libphext_1.Coordinate("5.x.3/1.1.1/1.1.1").to_string(), "5.1.3/1.1.1/1.1.1", "only the NaN component wraps");
+            assert_eq("NN4", new libphext_1.Coordinate("1..1/1.1.1/1.1.1").to_string(), "1.1.1/1.1.1/1.1.1", "empty segment wraps to 1");
+            assert_eq("NN5", phext.to_coordinate("HOME").to_string(), "1.1.1/1.1.1/1.1.1", "to_coordinate of garbage is origin");
+            assert_eq("NN6", phext.to_coordinate("x9x.x8x.x7x/x6x.x5x.x4x/x3x.x2x.x1x").to_string(), "9.8.7/6.5.4/3.2.1", "to_coordinate ignores non-digits, never NaN");
+            var poisoned = new libphext_1.Coordinate();
+            poisoned.z.library = NaN;
+            poisoned.library_break();
+            assert_number_eq("NN7", poisoned.z.library, 1, "advance from NaN wraps to 1");
+            assert_eq("NN8", poisoned.to_string(), "1.1.1/1.1.1/1.1.1", "no NaN survives an advance");
+        };
+        // Precision limit (Will, 2026-11-02): components are JS numbers, so the
+        // largest exactly-representable component is MAX_COMPONENT = 2^53 - 1.
+        // Exceeding it on any parse or advance path is an error, never a rounding.
+        this.test_precision_limit = function () {
+            assert_number_eq("PL0", libphext_1.MAX_COMPONENT, 9007199254740991, "MAX_COMPONENT is Number.MAX_SAFE_INTEGER");
+            assert_number_eq("PL1", phext.MAX_COMPONENT, 9007199254740991, "MAX_COMPONENT exposed on Phext");
+            var at_max = new libphext_1.Coordinate("9007199254740991.1.1/1.1.1/1.1.1");
+            assert_eq("PL2", at_max.to_string(), "9007199254740991.1.1/1.1.1/1.1.1", "MAX_COMPONENT works exactly");
+            assert_throws("PL3", function () { new libphext_1.Coordinate("9007199254740993.1.1/1.1.1/1.1.1"); }, "constructor rejects an unrepresentable component");
+            assert_throws("PL4", function () { phext.to_coordinate("1.1.1/1.1.1/1.1.9007199254740993"); }, "to_coordinate rejects an unrepresentable component");
+            assert_throws("PL5", function () { new libphext_1.Coordinate("1.1.1/1.1.1/1.1.9007199254740991").scroll_break(); }, "advance past MAX_COMPONENT throws");
+            var almost = new libphext_1.Coordinate("1.1.1/1.1.1/1.1.9007199254740990");
+            almost.scroll_break();
+            assert_number_eq("PL6", almost.x.scroll, 9007199254740991, "advance up to MAX_COMPONENT is exact");
         };
         this.test_to_urlencoded = function () {
             var sample1 = phext.to_coordinate("1.1.1/1.1.1/1.1.1");
@@ -307,22 +355,63 @@ var Tests = /** @class */ (function () {
         // * test_series
         // * test_shelves
         // * test_libraries
+        this.test_coordinate_unbounded = function () {
+            // since 0.4.0 coordinate components are unbounded: breaks advance
+            // past 999 instead of saturating there
+            var c1 = new libphext_1.Coordinate("999.999.999/999.999.999/999.999.998");
+            c1.scroll_break();
+            assert_eq("CS1", c1.to_string(), "999.999.999/999.999.999/999.999.999", "advance to 999");
+            c1.scroll_break();
+            assert_eq("CS2", c1.to_string(), "999.999.999/999.999.999/999.999.1000", "no saturation: advance to 1000");
+            c1.section_break();
+            assert_eq("CS3", c1.to_string(), "999.999.999/999.999.999/999.1000.1", "higher dimension advances past 999, lower dimensions reset");
+            c1.library_break();
+            assert_eq("CS4", c1.to_string(), "1000.1.1/1.1.1/1.1.1", "library advances past 999");
+            // parse/print round-trip of a coordinate with components > 999
+            var big = "1234.5.6/7.8.9/10.11.12000";
+            var c2 = new libphext_1.Coordinate(big);
+            assert_eq("CS5", c2.to_string(), big, "round-trip above 999");
+            assert_true("CS6", c2.validate_coordinate(), "coordinate above 999 is valid");
+            // walking scroll breaks yields distinct coordinates 1000, 1001, ...
+            var walker = new libphext_1.Coordinate();
+            var seen = [];
+            for (var i = 0; i < 1001; ++i) {
+                walker.scroll_break();
+                if (walker.x.scroll >= 999) {
+                    seen.push(walker.to_string());
+                }
+            }
+            assert_eq("CS7", seen.join(" "), "1.1.1/1.1.1/1.1.999 1.1.1/1.1.1/1.1.1000 1.1.1/1.1.1/1.1.1001 1.1.1/1.1.1/1.1.1002", "distinct coordinates past 999");
+            var text = "a" + "\u0017".repeat(1003) + "b";
+            var scrolls = phext.phokenize(text).filter(function (ps) { return ps.scroll.length > 0; });
+            assert_number_eq("CS8", scrolls.length, 2, "two scrolls");
+            assert_eq("CS9", scrolls[1].coord.to_string(), "1.1.1/1.1.1/1.1.1004", "scroll run advances past 999");
+        };
         this.test_coordinate_validity = function () {
-            var c1 = phext.to_coordinate("0.0.0/0.0.0/0.0.0"); // invalid
+            // Will's floor ruling (2026-11-02): no phext coordinate component can
+            // ever be less than 1 — coordinates are 1-based by definition, so
+            // explicit 0 components wrap to 1 in every parse path, exactly as NaN
+            // does. There is no "null coordinate" (this supersedes the previous
+            // rs-parity exception preserved by the old CV1/CV2).
+            var c1 = phext.to_coordinate("0.0.0/0.0.0/0.0.0");
             var c2 = new libphext_1.Coordinate();
-            c2.z.library = 0;
-            c2.z.shelf = 0;
-            c2.z.series = 0;
-            c2.y.collection = 0;
-            c2.y.volume = 0;
-            c2.y.book = 0;
-            c2.x.chapter = 0;
-            c2.x.section = 0;
-            c2.x.scroll = 0;
-            assert_eq("CV1", c1.to_string(), c2.to_string(), "null coordinate");
+            assert_eq("CV1", c1.to_string(), c2.to_string(), "zero components wrap to the origin");
             var c1b = c1.validate_coordinate();
-            var c2b = c2.validate_coordinate();
-            assert_false("CV2", c1b, "Invalid parsed");
+            assert_true("CV2", c1b, "parsed zeros form a valid coordinate");
+            // Direct field mutation can still force a component below the floor —
+            // no library path produces it, and validate_coordinate() remains the
+            // guard that flags it.
+            var c2z = new libphext_1.Coordinate();
+            c2z.z.library = 0;
+            c2z.z.shelf = 0;
+            c2z.z.series = 0;
+            c2z.y.collection = 0;
+            c2z.y.volume = 0;
+            c2z.y.book = 0;
+            c2z.x.chapter = 0;
+            c2z.x.section = 0;
+            c2z.x.scroll = 0;
+            var c2b = c2z.validate_coordinate();
             assert_false("CV3", c2b, "Invalid created");
             var c3 = new libphext_1.Coordinate();
             assert_true("CV4", c3.validate_coordinate(), "default valid");
@@ -341,10 +430,26 @@ var Tests = /** @class */ (function () {
             assert_number_eq("CV6", c4.y.volume, 4, "spot check");
             var c4b = c4.validate_coordinate();
             var c5b = c5.validate_coordinate();
-            assert_false("CV7", c4b, "out of range");
-            assert_false("CV8", c5b, "out of range");
+            assert_true("CV7", c4b, "in range");
+            assert_true("CV8", c5b, "in range");
             var c6 = new libphext_1.Coordinate("11.12.13/14.15.16/17.18.19");
             assert_true("CV9", c6.validate_coordinate(), "valid coordinate");
+        };
+        this.test_coordinate_floor = function () {
+            // Regression block for Will's ruling (2026-11-02): the null coordinate
+            // can no longer be constructed via any parse path — every component of
+            // every parsed or computed coordinate is >= 1.
+            assert_eq("FL1", phext.to_coordinate("0.0.0/0.0.0/0.0.0").to_string(), "1.1.1/1.1.1/1.1.1", "to_coordinate wraps all-zero address to the origin");
+            assert_eq("FL2", phext.to_coordinate("0.5.0/0.0.3/0.0.0").to_string(), "1.5.1/1.1.3/1.1.1", "to_coordinate wraps only the zero components");
+            assert_eq("FL3", new libphext_1.Coordinate("0.0.0/0.0.0/0.0.0").to_string(), "1.1.1/1.1.1/1.1.1", "constructor wraps all-zero address to the origin");
+            var addresses = ["0.0.0/0.0.0/0.0.0", "0.1.0/1.0.1/0.0.1", "HOME", "", "0.0.0;0.0.0;0.0.0"];
+            var all_valid = addresses.every(function (a) {
+                var via_lenient = phext.to_coordinate(a);
+                var via_ctor = new libphext_1.Coordinate(a);
+                return via_lenient.validate_coordinate() && via_ctor.validate_coordinate();
+            });
+            assert_true("FL4", all_valid, "no parse path yields an invalid (below-floor) coordinate");
+            assert_eq("FL5", phext.fetch("hello", phext.to_coordinate("0.0.0/0.0.0/0.0.0")), "hello", "the former null coordinate now addresses the origin scroll");
         };
         this.test_range_based_replace = function () {
             var doc1 = "Before\x19text to be replaced\x1Calso this\x1Dand this\x17After";
@@ -568,59 +673,106 @@ var Tests = /** @class */ (function () {
             assert_number_eq("PI12", test_invalid, 103);
             assert_number_eq("PI13", example.length, 112);
         };
-        // holding off on checksums until xxh3 is patched to match v0.8.2
-        /*
-    test_scroll_manifest = () => {
-        const example = "first scroll\x17second scroll\x18second section\x19second chapter\x1Abook 2\x1Cvolume 2\x1Dcollection 2\x1Eseries 2\x1Fshelf 2\x01library 2";
-        const result = phext.manifest(example);
-
-        const scroll0 = "00000000000000000000";
-        const hash0 = phext.checksum(scroll0);
-        assert_eq("SM0", hash0, "7e79edd92a62a048e1cd24ffab542e34", "hash verification");
-
-        const scroll1 = "first scroll";
-        const hash1 = phext.checksum(scroll1);
-        assert_eq("SM1", hash1, "ba9d944e4967e29d48bae69ac2999699", "hash verification");
-
-        const scroll2 = "second scroll";
-        const hash2 = phext.checksum(scroll2);
-        assert_eq("SM2", hash2, "2fe1b2040314ac66f132dd3b4926157c", "hash verification");
-
-        const scroll3 = "second section";
-        const hash3 = phext.checksum(scroll3);
-        assert_eq("SM3", hash3, "fddb6916753b6f4e0b5281469134778b", "hash verification");
-
-        const scroll4 = "second chapter";
-        const hash4 = phext.checksum(scroll4);
-        assert_eq("SM4", hash4, "16ab5b1a0a997db95ec215a3bf2c57b3", "hash verification");
-
-        const scroll5 = "book 2";
-        const hash5 = phext.checksum(scroll5);
-        assert_eq("SM5", hash5, "0f20f79bf36f63e8fba25cc6765e2d0d", "hash verification");
-
-        const scroll6 = "volume 2";
-        const hash6 = phext.checksum(scroll6);
-        assert_eq("SM6", hash6, "7ead0c6fef43adb446fe3bda6fb0adc7", "hash verification");
-
-        const scroll7 = "collection 2";
-        const hash7 = phext.checksum(scroll7);
-        assert_eq("SM7", hash7, "78c12298931c6edede92962137a9280a", "hash verification");
-
-        const scroll8 = "series 2";
-        const hash8 = phext.checksum(scroll8);
-        assert_eq("SM8", hash8, "0f35100c84df601a490b7b63d7e8c0a8", "hash verification");
-
-        const scroll9 = "shelf 2";
-        const hash9 = phext.checksum(scroll9);
-        assert_eq("SM9", hash9, "3bbf7e67cb33d613a906bc5a3cbefd95", "hash verification");
-
-        const scroll10 = "library 2";
-        const hash10 = phext.checksum(scroll10);
-        assert_eq("SM10", hash10, "2e7fdd387196a8a2706ccb9ad6792bc3", "hash verification");
-
-        const expected = `${hash1}\x17${hash2}\x18${hash3}\x19${hash4}\x1A${hash5}\x1C${hash6}\x1D${hash7}\x1E${hash8}\x1F${hash9}\x01${hash10}`;
-        assert_eq("SM11", result, expected, "Hierarchical Hash");
-    };*/
+        // Offsets are UTF-8 byte offsets, matching libphext-rs (Will, 2026-11-02).
+        // JS string length counts UTF-16 code units and undercounts non-ASCII.
+        this.test_utf8_offsets = function () {
+            var doc = "héllo\x17wörld";
+            assert_number_eq("UO1", phext.offset(doc, phext.to_coordinate("1.1.1/1.1.1/1.1.1")), 0, "first scroll at byte 0");
+            assert_number_eq("UO2", phext.offset(doc, phext.to_coordinate("1.1.1/1.1.1/1.1.2")), 7, "second scroll at byte 7 (rs parity)");
+            assert_eq("UO3", phext.index(doc), "0\x177", "index carries byte offsets");
+            var doc3 = "☃\x17éé\x17x";
+            assert_number_eq("UO4", phext.offset(doc3, phext.to_coordinate("1.1.1/1.1.1/1.1.2")), 4, "3-byte snowman + break");
+            assert_number_eq("UO5", phext.offset(doc3, phext.to_coordinate("1.1.1/1.1.1/1.1.3")), 9, "byte offsets accumulate over multibyte scrolls");
+            assert_eq("UO6", phext.index(doc3), "0\x174\x179", "index over multibyte scrolls");
+        };
+        // explode/implode (rs parity, Will 2026-11-02): phext <-> Map of
+        // canonical coordinate string -> scroll text, round-trip identity.
+        this.test_explode_implode = function () {
+            var _a, _b, _c, _d, _e, _f;
+            var doc = "alpha\x17beta\x18gamma";
+            var parts = phext.explode(doc);
+            assert_number_eq("EI1", parts.size, 3, "explode finds every scroll");
+            assert_eq("EI2", (_a = parts.get("1.1.1/1.1.1/1.1.1")) !== null && _a !== void 0 ? _a : "<missing>", "alpha", "explode scroll 1");
+            assert_eq("EI3", (_b = parts.get("1.1.1/1.1.1/1.1.2")) !== null && _b !== void 0 ? _b : "<missing>", "beta", "explode scroll 2");
+            assert_eq("EI4", (_c = parts.get("1.1.1/1.1.1/1.2.1")) !== null && _c !== void 0 ? _c : "<missing>", "gamma", "explode scroll 3");
+            assert_eq("EI5", phext.implode(parts), doc, "implode(explode(doc)) is identity");
+            var gap = "A\x17\x17B";
+            var gparts = phext.explode(gap);
+            assert_number_eq("EI6", gparts.size, 2, "explode skips the empty slot");
+            assert_eq("EI7", (_d = gparts.get("1.1.1/1.1.1/1.1.3")) !== null && _d !== void 0 ? _d : "<missing>", "B", "scroll after the gap keeps its coordinate");
+            assert_eq("EI8", phext.implode(gparts), gap, "round-trip preserves the gap");
+            var deep = phext.replace("", new libphext_1.Coordinate("1.1.1/1.1.1/1.1.1001"), "far");
+            deep = phext.replace(deep, new libphext_1.Coordinate("2.1.1/1.1.1/1.1.1"), "wide");
+            var dparts = phext.explode(deep);
+            assert_eq("EI9", (_e = dparts.get("1.1.1/1.1.1/1.1.1001")) !== null && _e !== void 0 ? _e : "<missing>", "far", "explode past 999");
+            assert_eq("EI10", (_f = dparts.get("2.1.1/1.1.1/1.1.1")) !== null && _f !== void 0 ? _f : "<missing>", "wide", "explode at library 2");
+            assert_eq("EI11", phext.implode(dparts), deep, "round-trip past 999 is identity");
+            var scrambled = new Map();
+            scrambled.set("1.1.1/1.1.1/1.2.1", "gamma");
+            scrambled.set("1.1.1/1.1.1/1.1.1", "alpha");
+            scrambled.set("1.1.1/1.1.1/1.1.2", "beta");
+            assert_eq("EI12", phext.implode(scrambled), doc, "implode sorts by coordinate");
+            var with_empty = new Map(scrambled);
+            with_empty.set("1.1.1/1.1.1/1.1.3", "");
+            assert_eq("EI13", phext.implode(with_empty), doc, "implode drops empty scrolls (rs parity)");
+        };
+        this.test_scroll_manifest = function () {
+            var example = "first scroll\x17second scroll\x18second section\x19second chapter\x1Abook 2\x1Cvolume 2\x1Dcollection 2\x1Eseries 2\x1Fshelf 2\x01library 2";
+            var result = phext.manifest(example);
+            var scroll0 = "00000000000000000000";
+            var hash0 = phext.checksum(scroll0);
+            assert_eq("SM0", hash0, "7e79edd92a62a048e1cd24ffab542e34", "hash verification");
+            var scroll1 = "first scroll";
+            var hash1 = phext.checksum(scroll1);
+            assert_eq("SM1", hash1, "ba9d944e4967e29d48bae69ac2999699", "hash verification");
+            var scroll2 = "second scroll";
+            var hash2 = phext.checksum(scroll2);
+            assert_eq("SM2", hash2, "2fe1b2040314ac66f132dd3b4926157c", "hash verification");
+            var scroll3 = "second section";
+            var hash3 = phext.checksum(scroll3);
+            assert_eq("SM3", hash3, "fddb6916753b6f4e0b5281469134778b", "hash verification");
+            var scroll4 = "second chapter";
+            var hash4 = phext.checksum(scroll4);
+            assert_eq("SM4", hash4, "16ab5b1a0a997db95ec215a3bf2c57b3", "hash verification");
+            var scroll5 = "book 2";
+            var hash5 = phext.checksum(scroll5);
+            assert_eq("SM5", hash5, "0f20f79bf36f63e8fba25cc6765e2d0d", "hash verification");
+            var scroll6 = "volume 2";
+            var hash6 = phext.checksum(scroll6);
+            assert_eq("SM6", hash6, "7ead0c6fef43adb446fe3bda6fb0adc7", "hash verification");
+            var scroll7 = "collection 2";
+            var hash7 = phext.checksum(scroll7);
+            assert_eq("SM7", hash7, "78c12298931c6edede92962137a9280a", "hash verification");
+            var scroll8 = "series 2";
+            var hash8 = phext.checksum(scroll8);
+            assert_eq("SM8", hash8, "0f35100c84df601a490b7b63d7e8c0a8", "hash verification");
+            var scroll9 = "shelf 2";
+            var hash9 = phext.checksum(scroll9);
+            assert_eq("SM9", hash9, "3bbf7e67cb33d613a906bc5a3cbefd95", "hash verification");
+            var scroll10 = "library 2";
+            var hash10 = phext.checksum(scroll10);
+            assert_eq("SM10", hash10, "2e7fdd387196a8a2706ccb9ad6792bc3", "hash verification");
+            var expected = "".concat(hash1, "\u0017").concat(hash2, "\u0018").concat(hash3, "\u0019").concat(hash4, "\u001A").concat(hash5, "\u001C").concat(hash6, "\u001D").concat(hash7, "\u001E").concat(hash8, "\u001F").concat(hash9, "\u0001").concat(hash10);
+            assert_eq("SM11", result, expected, "Hierarchical Hash");
+        };
+        // XXH3-128 vectors measured live against libphext-rs (xxhash-rust 0.8.5),
+        // covering the XXH3 length classes and unicode input.
+        this.test_checksum_vectors = function () {
+            assert_eq("CSH1", phext.checksum(""), "99aa06d3014798d86001c324468d497f", "empty input");
+            assert_eq("CSH2", phext.checksum("hello"), "b5e9c1ad071b3e7fc779cfaa5e523818", "hello");
+            var big = "";
+            for (var i = 0; i < 300; ++i) {
+                big += String.fromCharCode(97 + (i % 26));
+            }
+            assert_eq("CSH3", phext.checksum(big), "34de2aad60a7d7ca7f720c1f731c9648", "300 bytes (>240 class)");
+            var huge = "";
+            for (var j = 0; j < 5000; ++j) {
+                huge += String.fromCharCode(97 + (j % 26));
+            }
+            assert_eq("CSH4", phext.checksum(huge), "0acf3f2690e48fadeb0f5845c1ec4cc2", "5000 bytes (multi-block)");
+            assert_eq("CSH5", phext.checksum("héllo wörld ☃"), "fdddf2262f35ef0b97db5888c682c8e9", "unicode input");
+            assert_eq("CSH6", phext.manifest("héllo\x17wörld"), "5c04d7f26e6ecfce2ad2fc5553253f9c\x1703433418f6c9a9177196812225aaf5a8", "manifest over unicode scrolls matches rs");
+        };
         this.test_phext_soundex_v1 = function () {
             var letters1 = "bpfv";
             var precheck1 = phext.soundex_internal(letters1);
