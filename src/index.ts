@@ -254,10 +254,10 @@ export class Phext {
 		var output = new Array();
 		for (var i = 0; i < phokens.length; ++i) {
 		  const delims = coord.advance_to(phokens[i].coord);
-		  offset += delims.length;
+		  offset += utf8_length(delims);
 		  const new_coord = new Coordinate(coord.to_string());
 		  output.push(new PositionedScroll(new_coord, `${offset}`, new_coord, ""));
-		  offset += phokens[i].scroll.length;
+		  offset += utf8_length(phokens[i].scroll);
 		}
 
 		return output;
@@ -816,6 +816,19 @@ export class Coordinate {
 	scroll_break = (): void => {
 		this.x.scroll = this.advance_coordinate(this.x.scroll);
 	};
+}
+
+// UTF-8 byte length of a string — the unit libphext-rs measures scroll
+// offsets in (Rust str::len is a byte count). JS string length counts UTF-16
+// code units and silently undercounts every non-ASCII scroll, so index/offset
+// measure with this instead. Audit note: the only other length arithmetic in
+// this file feeds substring() slicing (get_subspace_coordinates, fetch,
+// insert, range_replace), where UTF-16 indices are internally consistent and
+// the strings produced are identical to rs; offset() is the sole place a
+// numeric offset escapes the library, through index_phokens.
+const __utf8_encoder = new TextEncoder();
+function utf8_length(text: string): number {
+	return __utf8_encoder.encode(text).length;
 }
 
 // Sanitize a computed coordinate component (Will's rule, 2026-11-02): a phext

@@ -35,6 +35,13 @@ implies 10^27 scrolls. Materializing, exploding, or indexing such a graph
 costs memory proportional to its populated scroll count. The old 999 cap
 never protected against this (999^9 was already unreachable); sparsity does.
 Keep graphs sparse.
+Offsets
+-------
+`index()` and `offset()` report **UTF-8 byte offsets**, matching
+libphext-rs. (JS string length counts UTF-16 code units; on non-ASCII
+scrolls the two diverge — for "héllo\x17wörld" the second scroll sits at
+byte offset 7, not 6.)
+
 Development: Test / Build / Publish
 -----------------------------------
 

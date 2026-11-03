@@ -102,6 +102,7 @@ class Tests {
         this.test_navmap();
         this.test_textmap();
         this.test_phext_index();
+        this.test_utf8_offsets();
         //this.test_scroll_manifest();
         this.test_phext_soundex_v1();
     };
@@ -986,6 +987,20 @@ class Tests {
         assert_number_eq("PI12", test_invalid, 103);
 
         assert_number_eq("PI13", example.length, 112);
+    };
+
+    // Offsets are UTF-8 byte offsets, matching libphext-rs (Will, 2026-11-02).
+    // JS string length counts UTF-16 code units and undercounts non-ASCII.
+    test_utf8_offsets = () => {
+        const doc = "héllo\x17wörld";
+        assert_number_eq("UO1", phext.offset(doc, phext.to_coordinate("1.1.1/1.1.1/1.1.1")), 0, "first scroll at byte 0");
+        assert_number_eq("UO2", phext.offset(doc, phext.to_coordinate("1.1.1/1.1.1/1.1.2")), 7, "second scroll at byte 7 (rs parity)");
+        assert_eq("UO3", phext.index(doc), "0\x177", "index carries byte offsets");
+
+        const doc3 = "☃\x17éé\x17x";
+        assert_number_eq("UO4", phext.offset(doc3, phext.to_coordinate("1.1.1/1.1.1/1.1.2")), 4, "3-byte snowman + break");
+        assert_number_eq("UO5", phext.offset(doc3, phext.to_coordinate("1.1.1/1.1.1/1.1.3")), 9, "byte offsets accumulate over multibyte scrolls");
+        assert_eq("UO6", phext.index(doc3), "0\x174\x179", "index over multibyte scrolls");
     };
 
     // holding off on checksums until xxh3 is patched to match v0.8.2
