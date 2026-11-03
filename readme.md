@@ -21,12 +21,15 @@ of silently rounding — 9007199254740993 would otherwise become
 components, has no such limit; this is a JS-representation bound, not a
 format bound.)
 
-A computed address never carries NaN: in the `Coordinate` constructor and on
-every advance path, a NaN / non-numeric / empty component wraps to 1
-(`new Coordinate("HOME")` is `1.1.1/1.1.1/1.1.1`). `Phext.to_coordinate` is
-deliberately exempt — it mirrors libphext-rs, where explicit 0 components form
-the documented "null coordinate", and its digit-only accumulation cannot
-produce NaN.
+No phext coordinate component can ever be less than 1 (Will's ruling,
+2026-11-02): coordinates are 1-based by definition. Every parse and compute
+path — the `Coordinate` constructor, `Phext.to_coordinate`, and all advance
+paths — funnels components through one sanitizer, so a NaN / non-numeric /
+empty component wraps to 1, and so does an explicit 0
+(`new Coordinate("HOME")` and `to_coordinate("0.0.0/0.0.0/0.0.0")` are both
+`1.1.1/1.1.1/1.1.1`). There is no "null coordinate". Until this ruling,
+`to_coordinate` mirrored libphext-rs in preserving explicit 0 components as
+an invalid null coordinate; that exception is removed.
 
 Dense graphs: phext is sparse by design. Coordinate components are unbounded,
 but a fully-populated dense graph contains the product of its dimensions'

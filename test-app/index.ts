@@ -81,6 +81,7 @@ class Tests {
         this.test_to_urlencoded();
         this.test_scrolls();
         this.test_coordinate_validity();
+        this.test_coordinate_floor();
         this.test_coordinate_unbounded();
         this.test_coordinate_based_insert();
         this.test_coordinate_based_remove();
@@ -423,16 +424,26 @@ class Tests {
     };
 
     test_coordinate_validity = () => {
-        const c1 = phext.to_coordinate("0.0.0/0.0.0/0.0.0"); // invalid
+        // Will's floor ruling (2026-11-02): no phext coordinate component can
+        // ever be less than 1 — coordinates are 1-based by definition, so
+        // explicit 0 components wrap to 1 in every parse path, exactly as NaN
+        // does. There is no "null coordinate" (this supersedes the previous
+        // rs-parity exception preserved by the old CV1/CV2).
+        const c1 = phext.to_coordinate("0.0.0/0.0.0/0.0.0");
         var c2 = new Coordinate();
-        c2.z.library = 0; c2.z.shelf = 0; c2.z.series = 0;
-        c2.y.collection = 0; c2.y.volume = 0; c2.y.book = 0;
-        c2.x.chapter = 0; c2.x.section = 0; c2.x.scroll = 0;
-        assert_eq("CV1", c1.to_string(), c2.to_string(), "null coordinate");
+        assert_eq("CV1", c1.to_string(), c2.to_string(), "zero components wrap to the origin");
 
         const c1b = c1.validate_coordinate();
-        const c2b = c2.validate_coordinate();
-        assert_false("CV2", c1b, "Invalid parsed");
+        assert_true("CV2", c1b, "parsed zeros form a valid coordinate");
+
+        // Direct field mutation can still force a component below the floor —
+        // no library path produces it, and validate_coordinate() remains the
+        // guard that flags it.
+        var c2z = new Coordinate();
+        c2z.z.library = 0; c2z.z.shelf = 0; c2z.z.series = 0;
+        c2z.y.collection = 0; c2z.y.volume = 0; c2z.y.book = 0;
+        c2z.x.chapter = 0; c2z.x.section = 0; c2z.x.scroll = 0;
+        const c2b = c2z.validate_coordinate();
         assert_false("CV3", c2b, "Invalid created");
 
         const c3 = new Coordinate();
@@ -452,6 +463,25 @@ class Tests {
 
         const c6 = new Coordinate("11.12.13/14.15.16/17.18.19");
         assert_true("CV9", c6.validate_coordinate(), "valid coordinate");
+    };
+
+    test_coordinate_floor = () => {
+        // Regression block for Will's ruling (2026-11-02): the null coordinate
+        // can no longer be constructed via any parse path — every component of
+        // every parsed or computed coordinate is >= 1.
+        assert_eq("FL1", phext.to_coordinate("0.0.0/0.0.0/0.0.0").to_string(), "1.1.1/1.1.1/1.1.1", "to_coordinate wraps all-zero address to the origin");
+        assert_eq("FL2", phext.to_coordinate("0.5.0/0.0.3/0.0.0").to_string(), "1.5.1/1.1.3/1.1.1", "to_coordinate wraps only the zero components");
+        assert_eq("FL3", new Coordinate("0.0.0/0.0.0/0.0.0").to_string(), "1.1.1/1.1.1/1.1.1", "constructor wraps all-zero address to the origin");
+
+        const addresses = ["0.0.0/0.0.0/0.0.0", "0.1.0/1.0.1/0.0.1", "HOME", "", "0.0.0;0.0.0;0.0.0"];
+        const all_valid = addresses.every((a: string) => {
+            const via_lenient = phext.to_coordinate(a);
+            const via_ctor = new Coordinate(a);
+            return via_lenient.validate_coordinate() && via_ctor.validate_coordinate();
+        });
+        assert_true("FL4", all_valid, "no parse path yields an invalid (below-floor) coordinate");
+
+        assert_eq("FL5", phext.fetch("hello", phext.to_coordinate("0.0.0/0.0.0/0.0.0")), "hello", "the former null coordinate now addresses the origin scroll");
     };
 
     test_coordinate_based_replace() {

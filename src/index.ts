@@ -638,14 +638,14 @@ export class Phext {
 				byte == this.ADDRESS_MACRO_BREAK ||
 				byte == this.ADDRESS_MACRO_ALT) {
 				switch (index) {
-				  case 1: result.z.library = value; index += 1; break;
-				  case 2: result.z.shelf = value; index += 1; break;
-				  case 3: result.z.series = value; index += 1; break;
-				  case 4: result.y.collection = value; index += 1; break;
-				  case 5: result.y.volume = value; index += 1; break;
-				  case 6: result.y.book = value; index += 1; break;
-				  case 7: result.x.chapter = value; index += 1; break;
-				  case 8: result.x.section = value; index += 1; break;
+				  case 1: result.z.library = sanitize_component(value); index += 1; break;
+				  case 2: result.z.shelf = sanitize_component(value); index += 1; break;
+				  case 3: result.z.series = sanitize_component(value); index += 1; break;
+				  case 4: result.y.collection = sanitize_component(value); index += 1; break;
+				  case 5: result.y.volume = sanitize_component(value); index += 1; break;
+				  case 6: result.y.book = sanitize_component(value); index += 1; break;
+				  case 7: result.x.chapter = sanitize_component(value); index += 1; break;
+				  case 8: result.x.section = sanitize_component(value); index += 1; break;
 				}
 				value = 0;
 			}
@@ -661,7 +661,7 @@ export class Phext {
 		}
 
   		if (index > 0) {
-    		result.x.scroll = value;
+    		result.x.scroll = sanitize_component(value);
   		}
 
   		return result;
@@ -868,13 +868,16 @@ function utf8_length(text: string): number {
 	return __utf8_encoder.encode(text).length;
 }
 
-// Sanitize a computed coordinate component (Will's rule, 2026-11-02): a phext
-// address never carries NaN. A NaN component — from non-numeric input, an empty
-// segment, or a poisoned advance — wraps to COORDINATE_MINIMUM (1), as does any
-// value below the minimum. The constructor and the advance paths funnel through
-// here. (Phext.to_coordinate is exempt by design: it mirrors rs, where explicit
-// 0 components form the documented "null coordinate" — and its digit-only
-// accumulation can never produce NaN in the first place.)
+// Sanitize a computed coordinate component (Will's rules, 2026-11-02): no
+// phext coordinate component can ever be less than 1 — coordinates are 1-based
+// by definition — and a phext address never carries NaN. A NaN component (from
+// non-numeric input, an empty segment, or a poisoned advance) wraps to
+// COORDINATE_MINIMUM (1), as does 0 and any other value below the minimum.
+// EVERY path that produces a component funnels through here: the Coordinate
+// constructor, Phext.to_coordinate, the advance paths, and the X/Y/Z sub-
+// coordinate constructors. There is no "null coordinate": until Will's
+// floor ruling, to_coordinate preserved explicit 0 components (mirroring rs);
+// that exception is removed — 0 wraps to 1 exactly like NaN.
 function sanitize_component(value: number): number {
 	if (Number.isNaN(value)) { return __internal_phext.COORDINATE_MINIMUM; }
 	if (value > MAX_COMPONENT) {
@@ -929,9 +932,9 @@ class ZCoordinate {
 	shelf: number;
 	series: number;
 	constructor(library: number = 1, shelf: number = 1, series: number = 1) {
-		this.library = library;
-		this.shelf = shelf;
-		this.series = series;
+		this.library = sanitize_component(library);
+		this.shelf = sanitize_component(shelf);
+		this.series = sanitize_component(series);
 	}
 }
 
@@ -940,9 +943,9 @@ class YCoordinate {
 	volume: number;
 	book: number;
 	constructor(collection: number = 1, volume: number = 1, book: number = 1) {
-		this.collection = collection;
-		this.volume = volume;
-		this.book = book;
+		this.collection = sanitize_component(collection);
+		this.volume = sanitize_component(volume);
+		this.book = sanitize_component(book);
 	}
 }
 
@@ -951,8 +954,8 @@ class XCoordinate {
 	section: number;
 	scroll: number;
 	constructor(chapter: number = 1, section: number = 1, scroll: number = 1) {
-		this.chapter = chapter;
-		this.section = section;
-		this.scroll = scroll;
+		this.chapter = sanitize_component(chapter);
+		this.section = sanitize_component(section);
+		this.scroll = sanitize_component(scroll);
 	}
 }
