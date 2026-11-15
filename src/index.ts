@@ -9,6 +9,7 @@
 // -----------------------------------------------------------------------------------------------------------
 import { Buffer } from 'buffer';
 import * as xxhash from 'xxh3-ts';
+import * as lzma from 'lzma-native';
 
 // The largest coordinate component a JS number holds exactly: 2^53 - 1.
 // Phext components are format-unbounded (libphext-rs uses u64/usize), but a
@@ -18,10 +19,22 @@ import * as xxhash from 'xxh3-ts';
 // with an error instead of rounding (Will, 2026-11-02).
 export const MAX_COMPONENT = Number.MAX_SAFE_INTEGER;
 
+// The first (and only header) line of a binary scroll, without its line
+// break — libphext-rs binary::BINARY_SCROLL_HEADER (0.5.0). A scroll whose
+// content begins with this line plus its line break is a binary scroll.
+export const BINARY_SCROLL_HEADER = "phext-binary:1:base64";
+
+// The xz preset the seal encodes with — libphext-rs seal::SEAL_PRESET.
+// The preset is an encoder choice, not a format requirement; seals
+// produced at other presets unseal identically.
+export const SEAL_PRESET = 6;
+
 export class Phext {
 	COORDINATE_MINIMUM: number;
 	MAX_COMPONENT: number;
 	LIBRARY_BREAK: string;
+	CHAIN_BREAK: string;
+	CHAIN_CLOSE: string;
 	MORE_COWBELL: string;
 	LINE_BREAK: string;
 	SCROLL_BREAK: string;
@@ -39,6 +52,8 @@ export class Phext {
 		this.COORDINATE_MINIMUM = 1;
 		this.MAX_COMPONENT = MAX_COMPONENT;
         this.LIBRARY_BREAK       = '\x01'; // 11D Break - replaces start of header
+        this.CHAIN_BREAK         = '\x02'; // stream level (0.6.0) - separates whole phexts within a chain; replaces start of text
+        this.CHAIN_CLOSE         = '\x03'; // stream level (0.6.0) - terminates a chain; replaces end of text
         this.MORE_COWBELL        = '\x07'; // i've got a fever, and the only prescription...is more cowbell!
         this.LINE_BREAK          = '\x0A'; // same as plain text \o/
         this.SCROLL_BREAK        = '\x17'; // 3D Break - replaces End Transmission Block
@@ -666,6 +681,402 @@ export class Phext {
 
   		return result;
 	};
+
+	// -------------------------------------------------------------------------------------------------------
+	// Binary scrolls (0.5.0) — ported 1:1 from libphext-rs src/binary.rs.
+	//
+	// Phext scrolls are text (valid UTF-8). Arbitrary binary data rides as
+	// text via base64, in the one canonical binary scroll format:
+	//
+	//   phext-binary:1:base64
+	//   <base64 body>
+	//
+	// Line 1 is exactly `phext-binary:1:base64` plus a single line break.
+	// The body is RFC 4648 base64: standard alphabet, padding required, no
+	// line wrapping, no whitespace. An empty payload is the header line
+	// alone. A scroll whose content begins with the header line is a binary
+	// scroll by definition; a prefix-matching scroll whose body is not
+	// strict base64 is a *malformed* binary scroll.
+	//
+	// The ingestion rule (canonical behaviour, all ports): when non-UTF-8
+	// data is observed in an incoming scroll update, we encode it with
+	// base64 verbatim. Byte-oriented entry points (insert_bytes,
+	// replace_bytes, ingest) never reject and never throw on non-UTF-8
+	// scroll data: valid UTF-8 is stored as ordinary text; anything else is
+	// stored as a binary scroll holding the base64 of the exact observed
+	// bytes — verbatim, with no normalisation — so the matching fetch
+	// returns the original bytes exactly.
+	// -------------------------------------------------------------------------------------------------------
+
+	// true when `scroll` carries the binary scroll header. Decoding
+	// success is a separate question — see decode_scroll.
+	is_binary_scroll = (scroll: string): boolean => {
+		return scroll.startsWith(BINARY_SCROLL_PREFIX);
+	};
+
+	// encodes raw bytes as a binary scroll (header line + base64 body)
+	encode_scroll = (payload: Buffer | Uint8Array): string => {
+		return BINARY_SCROLL_PREFIX + Buffer.from(payload).toString('base64');
+	};
+
+	// decodes a binary scroll back to its raw bytes. Returns null when the
+	// scroll is not a binary scroll, or when its body is not strict base64.
+	decode_scroll = (scroll: string): Buffer | null => {
+		if (!scroll.startsWith(BINARY_SCROLL_PREFIX)) { return null; }
+		const body = scroll.substring(BINARY_SCROLL_PREFIX.length);
+		return strict_base64_decode(body);
+	};
+
+	// stores `payload` at `location` as a binary scroll, unconditionally:
+	// the caller has declared this scroll binary, even if the bytes happen
+	// to be valid UTF-8.
+	insert_binary = (input: string, location: Coordinate, payload: Buffer | Uint8Array): string => {
+		return this.insert(input, location, this.encode_scroll(payload));
+	};
+
+	// replaces the scroll at `location` with `payload`, stored as a binary
+	// scroll (see insert_binary).
+	replace_binary = (input: string, location: Coordinate, payload: Buffer | Uint8Array): string => {
+		return this.replace(input, location, this.encode_scroll(payload));
+	};
+
+	// retrieves the bytes held at `target`. A well-formed binary scroll
+	// decodes to its payload. Any other scroll — plain text, a malformed
+	// binary scroll, or no scroll at all — yields the scroll's own UTF-8
+	// bytes (empty when the coordinate is unoccupied), mirroring how
+	// fetch returns "" there. This function is total: it never throws and
+	// never loses scroll content.
+	fetch_binary = (input: string, target: Coordinate): Buffer => {
+		const scroll = this.fetch(input, target);
+		const decoded = this.decode_scroll(scroll);
+		if (decoded !== null) { return decoded; }
+		return Buffer.from(scroll, 'utf-8');
+	};
+
+	// byte-oriented insert: stores `payload` at `location` under the
+	// ingestion rule (UTF-8 as text, non-UTF-8 as a base64-verbatim binary
+	// scroll).
+	insert_bytes = (input: string, location: Coordinate, payload: Buffer | Uint8Array): string => {
+		return this.insert(input, location, stored_form(this, payload));
+	};
+
+	// byte-oriented replace: stores `payload` at `location` under the
+	// ingestion rule (UTF-8 as text, non-UTF-8 as a base64-verbatim binary
+	// scroll).
+	replace_bytes = (input: string, location: Coordinate, payload: Buffer | Uint8Array): string => {
+		return this.replace(input, location, stored_form(this, payload));
+	};
+
+	// the byte-level twin of phokenize: walks a raw byte stream and
+	// returns each scroll's coordinate and raw bytes, with identical
+	// segmentation. Dimension-break bytes are ASCII, so byte offsets are
+	// exact; scroll bodies are returned uninterpreted, valid UTF-8 or not.
+	// A literal translation of libphext-rs binary::phokenize_bytes.
+	phokenize_bytes = (input: Buffer | Uint8Array): Array<ByteScroll> => {
+		const data = Buffer.from(input);
+		const result: Array<ByteScroll> = [];
+		const max = data.length;
+		var coord = new Coordinate();
+		var pi = 0;
+		while (true) {
+			const begin0 = new Coordinate(coord.to_string());
+			var begin = begin0;
+			var text_start = -1;
+			var text_end = max;
+			while (pi < max) {
+				const byte = data[pi];
+				if (is_structural_break(byte)) {
+					apply_break(coord, byte);
+					if (text_start >= 0) {
+						text_end = pi;
+						pi += 1;
+						break;
+					}
+				} else if (text_start < 0) {
+					text_start = pi;
+					begin = new Coordinate(coord.to_string());
+				}
+				pi += 1;
+			}
+			const scroll = text_start >= 0 ? Buffer.from(data.subarray(text_start, text_end)) : Buffer.alloc(0);
+			result.push({ coord: begin, bytes: scroll });
+			if (pi >= max) { break; }
+		}
+		return result;
+	};
+
+	// ingests an externally supplied phext byte stream. Every scroll is
+	// observed as raw bytes: valid UTF-8 scrolls pass through verbatim, and
+	// any scroll whose bytes are not valid UTF-8 is stored as a binary
+	// scroll holding the base64 of the exact observed bytes (the ingestion
+	// rule), so fetch_binary at its coordinate returns the original bytes
+	// exactly. Never rejects, never throws. The result is the canonical
+	// serialization (the same normal form as implode of explode).
+	ingest = (data: Buffer | Uint8Array): string => {
+		const parts = this.phokenize_bytes(data);
+		const map = new Map<string, string>();
+		for (const part of parts) {
+			const text = try_utf8_decode(part.bytes);
+			map.set(part.coord.to_string(), text !== null ? text : this.encode_scroll(part.bytes));
+		}
+		return this.implode(map);
+	};
+
+	// -------------------------------------------------------------------------------------------------------
+	// Chains (0.6.0) — ported 1:1 from libphext-rs src/phext.rs (chain
+	// layer + multiverse addressing).
+	//
+	// A chain is an ordered series of complete phexts within one stream,
+	// joined by CHAIN_BREAK (0x02) and optionally terminated by CHAIN_CLOSE
+	// (0x03). The chain layer is a stream-level layer, one rung above the
+	// library break: the nine dimension breaks structure a single phext,
+	// while the two chain bytes structure a stream of phexts. Each member
+	// is a whole phext; read in succession, a chain's members are editions
+	// in sequence — the chain is how a phext stream encodes time.
+	//
+	// `closed` records how the chain ended: true when a CHAIN_CLOSE
+	// terminated it, false when the stream simply ran out (EOF). A chain
+	// that ends at EOF is unclosed — possibly truncated — and is never
+	// silently promoted to closed. A stream with no chain bytes at all is
+	// a single unclosed chain holding one member phext: every pre-0.6
+	// phext reads this way.
+	//
+	// Multiverse addressing: inside a chain, members are universes indexed
+	// from 1. "$N:<address>" fetches the scroll at <address> in universe N
+	// of that chain; a bare <address> means universe 1.
+	// -------------------------------------------------------------------------------------------------------
+
+	// splits a stream into its chains. CHAIN_BREAK separates the member
+	// phexts of a chain; CHAIN_CLOSE terminates a chain, and whatever
+	// follows it opens the next one — so one stream may hold many chains.
+	// The stream's final chain is closed only when the stream ends with
+	// CHAIN_CLOSE. Splitting follows split semantics, so empty members
+	// and empty chains are preserved exactly: parse and serialize are
+	// byte-exact inverses for every stream.
+	parse_chains = (input: string): Array<Chain> => {
+		const ends_closed = input.endsWith(this.CHAIN_CLOSE);
+		var segments = input.split(this.CHAIN_CLOSE);
+		if (ends_closed) {
+			// split preserves the empty tail after a trailing delimiter;
+			// that tail is the end of the stream, not another chain
+			segments.pop();
+		}
+		const count = segments.length;
+		const chains: Array<Chain> = [];
+		for (var i = 0; i < count; ++i) {
+			const closed = ends_closed || (i + 1 < count);
+			chains.push(new Chain(segments[i].split(this.CHAIN_BREAK), closed));
+		}
+		return chains;
+	};
+
+	// serializes a stream of chains back into stream bytes: the inverse
+	// of parse_chains.
+	serialize_chains = (chains: Array<Chain>): string => {
+		var result = "";
+		for (const chain of chains) {
+			result += chain.serialize();
+		}
+		return result;
+	};
+
+	// parses a multiverse address into [universe, coordinate], or null
+	// when the universe prefix is malformed ($0:, a missing colon, or a
+	// non-numeric universe). A bare address is universe 1.
+	parse_universe_address = (address: string): [number, Coordinate] | null => {
+		var universe = 1;
+		var coord_part = address;
+		if (address.startsWith('$')) {
+			const rest = address.substring(1);
+			const colon = rest.indexOf(':');
+			if (colon < 0) { return null; }
+			const num = rest.substring(0, colon);
+			// mirror Rust's usize parse: ASCII digits only, at least one
+			if (!/^[0-9]+$/.test(num)) { return null; }
+			universe = parseInt(num, 10);
+			if (universe < 1) { return null; }
+			coord_part = rest.substring(colon + 1);
+		}
+		return [universe, this.to_coordinate(coord_part)];
+	};
+
+	// -------------------------------------------------------------------------------------------------------
+	// The xz seal (0.5.0) — semantics ported 1:1 from libphext-rs
+	// src/seal.rs; call shape adapted to the Node binding.
+	//
+	// Compression is a seal, not a working format. A phext is authored,
+	// edited, and queried as plain text; when a phext is finished —
+	// archived, published, or transported — it may be sealed:
+	// xz-compressed as a whole. Unsealing restores the exact original
+	// bytes.
+	//
+	// * The seal is a standard xz stream (liblzma, via the lzma-native
+	//   binding) over the phext's exact bytes. Decoders in any
+	//   implementation must accept any valid xz stream.
+	// * This implementation encodes at preset 6 with the CRC64 check —
+	//   the same encoder settings as libphext-rs (xz2 preset 6, CRC64) —
+	//   so sealed bytes are byte-identical across implementations for the
+	//   same input. The preset is an encoder choice, not a format
+	//   requirement; seals produced at other presets unseal identically.
+	// * Sealing is deterministic for a given encoder and preset.
+	//
+	// Call shape: lzma-native exposes compression only through its
+	// async (callback/promise) API — there is no synchronous entry point —
+	// so the seal functions return Promises where the Rust functions
+	// return values. The byte format is unchanged.
+	// -------------------------------------------------------------------------------------------------------
+
+	// seals a phext: xz-compresses its full UTF-8 bytes.
+	seal = async (input: string): Promise<Buffer> => {
+		return this.seal_bytes(Buffer.from(input, 'utf-8'));
+	};
+
+	// seals raw phext bytes (see seal).
+	seal_bytes = async (input: Buffer | Uint8Array): Promise<Buffer> => {
+		return lzma.compress(Buffer.from(input), { preset: SEAL_PRESET, check: LZMA_CHECK_CRC64 });
+	};
+
+	// unseals a sealed phext back to its exact original bytes. Rejects
+	// when the data is not a valid xz stream.
+	unseal = async (data: Buffer | Uint8Array): Promise<Buffer> => {
+		return lzma.decompress(Buffer.from(data));
+	};
+
+	// unseals directly to text. Rejects when the unsealed bytes are not
+	// valid UTF-8; to unseal foreign content that may carry non-UTF-8
+	// scrolls, unseal to bytes and pass them through ingest, which
+	// applies the base64-verbatim ingestion rule instead of failing.
+	unseal_string = async (data: Buffer | Uint8Array): Promise<string> => {
+		const bytes = await this.unseal(data);
+		const text = try_utf8_decode(bytes);
+		if (text === null) {
+			throw new Error("libphext: unsealed bytes are not valid UTF-8");
+		}
+		return text;
+	};
+}
+
+// One scroll of a byte-level phokenize: its coordinate and its raw bytes,
+// uninterpreted (valid UTF-8 or not).
+export interface ByteScroll {
+	coord: Coordinate;
+	bytes: Buffer;
+}
+
+// A chain (0.6.0): an ordered series of complete phexts within one stream,
+// joined by CHAIN_BREAK (0x02) and optionally terminated by CHAIN_CLOSE
+// (0x03). See Phext.parse_chains for the full semantics.
+export class Chain {
+	members: Array<string>;
+	closed: boolean;
+	constructor(members: Array<string> = [], closed: boolean = false) {
+		this.members = members;
+		this.closed = closed;
+	}
+
+	// serializes this chain alone: its members joined by CHAIN_BREAK,
+	// with a trailing CHAIN_CLOSE when the chain is closed. See
+	// Phext.serialize_chains for whole streams.
+	serialize = (): string => {
+		var result = this.members.join(__internal_phext.CHAIN_BREAK);
+		if (this.closed) { result += __internal_phext.CHAIN_CLOSE; }
+		return result;
+	};
+
+	// Fetch a scroll by multiverse address: "$N:coord", or a bare
+	// coordinate (universe 1). Out-of-range universes, malformed universe
+	// prefixes, and missing scrolls all yield an empty string, as fetch
+	// does for a missing scroll.
+	fetch = (address: string): string => {
+		const parsed = __internal_phext.parse_universe_address(address);
+		if (parsed === null) { return ""; }
+		const [universe, coord] = parsed;
+		const member = this.members[universe - 1];
+		if (member === undefined) { return ""; }
+		return __internal_phext.fetch(member, coord);
+	};
+}
+
+// Header line plus its terminating line break: the prefix of every binary
+// scroll.
+const BINARY_SCROLL_PREFIX = BINARY_SCROLL_HEADER + "\n";
+
+// liblzma's CHECK_CRC64 constant (lzma_check enum: NONE=0, CRC32=1,
+// CRC64=4, SHA256=10 — stable liblzma ABI values). The numeric value is
+// used directly because lzma-native assigns its CHECK_* constants
+// dynamically from the native binding, and Node's ESM namespace import
+// of the package therefore does not expose them (lzma.CHECK_CRC64 is
+// undefined under `import * as lzma from 'lzma-native'`, and passing
+// check: undefined silently seals with the binding's CRC32 default —
+// a different, shorter stream than libphext-rs produces).
+const LZMA_CHECK_CRC64 = 4;
+
+// Strict RFC 4648 base64 decode (standard alphabet, padding required, no
+// whitespace, canonical pad bits) — the semantics of the Rust base64
+// crate's STANDARD engine. Node's Buffer base64 decoder is lenient (it
+// skips characters outside the alphabet), so the shape is validated
+// first; returns null for anything that is not strict base64.
+function strict_base64_decode(body: string): Buffer | null {
+	if (body.length % 4 != 0) { return null; }
+	if (!/^[A-Za-z0-9+/]*={0,2}$/.test(body)) { return null; }
+	// canonical pad bits: the unused low bits of the final data character
+	// must be zero (the Rust STANDARD engine rejects non-zero pad bits)
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	if (body.endsWith("==")) {
+		if (body.length < 4) { return null; }
+		if ((alphabet.indexOf(body[body.length - 3]) & 0x0F) != 0) { return null; }
+	} else if (body.endsWith("=")) {
+		if (body.length < 4) { return null; }
+		if ((alphabet.indexOf(body[body.length - 2]) & 0x03) != 0) { return null; }
+	}
+	return Buffer.from(body, 'base64');
+}
+
+// Decodes bytes as UTF-8, strictly: returns the string, or null when the
+// bytes are not valid UTF-8 (the JS counterpart of Rust's
+// String::from_utf8 succeeding or failing). TextDecoder with fatal:true
+// rejects exactly the byte sequences Rust rejects (overlong forms,
+// surrogate halves, values past U+10FFFF).
+const __utf8_decoder = new TextDecoder('utf-8', { fatal: true });
+function try_utf8_decode(data: Buffer | Uint8Array): string | null {
+	try {
+		return __utf8_decoder.decode(data);
+	} catch (e) {
+		return null;
+	}
+}
+
+// The stored form of an incoming scroll update, per the ingestion rule:
+// valid UTF-8 stays text; anything else becomes a binary scroll holding
+// the base64 of the exact observed bytes, verbatim.
+function stored_form(phext: Phext, payload: Buffer | Uint8Array): string {
+	const text = try_utf8_decode(payload);
+	return text !== null ? text : phext.encode_scroll(payload);
+}
+
+// The nine dimension-break bytes (the byte twins of the Phext constants).
+function is_structural_break(byte: number): boolean {
+	return byte == 0x17 || // SCROLL_BREAK
+	       byte == 0x18 || // SECTION_BREAK
+	       byte == 0x19 || // CHAPTER_BREAK
+	       byte == 0x1A || // BOOK_BREAK
+	       byte == 0x1C || // VOLUME_BREAK
+	       byte == 0x1D || // COLLECTION_BREAK
+	       byte == 0x1E || // SERIES_BREAK
+	       byte == 0x1F || // SHELF_BREAK
+	       byte == 0x01;   // LIBRARY_BREAK
+}
+
+function apply_break(coord: Coordinate, byte: number): void {
+	if (byte == 0x17) { coord.scroll_break(); }
+	if (byte == 0x18) { coord.section_break(); }
+	if (byte == 0x19) { coord.chapter_break(); }
+	if (byte == 0x1A) { coord.book_break(); }
+	if (byte == 0x1C) { coord.volume_break(); }
+	if (byte == 0x1D) { coord.collection_break(); }
+	if (byte == 0x1E) { coord.series_break(); }
+	if (byte == 0x1F) { coord.shelf_break(); }
+	if (byte == 0x01) { coord.library_break(); }
 }
 
 // A Coordinate is nine unbounded components (each >= 1): library.shelf.series /

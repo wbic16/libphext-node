@@ -1,6 +1,6 @@
 {
   "name": "libphext",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "description": "the official fork of libphext-rs v0.1.7 for node",
   "source": "src/index.ts",
   "main": "dist/libphext.js",
@@ -40,6 +40,7 @@
   "homepage": "https://github.com/wbic16/libphext-node#readme",
   "dependencies": {
     "buffer": "^6.0.3",
+    "lzma-native": "^8.0.6",
     "xxh3-ts": "^2.0.1"
   },
   "devDependencies": {
