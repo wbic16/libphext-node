@@ -1,7 +1,44 @@
 "use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g = Object.create((typeof Iterator === "function" ? Iterator : Object).prototype);
+    return g.next = verb(0), g["throw"] = verb(1), g["return"] = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (g && (g = 0, op[0] && (_ = 0)), _) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
+            }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 var libphext_1 = require("libphext");
 var fs = require("fs");
+var crypto = require("crypto");
 var phext = new libphext_1.Phext();
 function verify_string(test_name, constant, value) {
     console.log("".concat(test_name, ": ").concat(constant == value ? 'OK' : 'Failed'));
@@ -20,6 +57,8 @@ verify_string('VM', phext.VOLUME_BREAK, '\x1C');
 verify_string('CN', phext.COLLECTION_BREAK, '\x1D');
 verify_string('SR', phext.SERIES_BREAK, '\x1E');
 verify_string('SF', phext.SHELF_BREAK, '\x1F');
+verify_string('CB', phext.CHAIN_BREAK, '\x02');
+verify_string('CC', phext.CHAIN_CLOSE, '\x03');
 var coord = new libphext_1.Coordinate("99.98.97/96.95.94/93.92.91");
 verify_number('Z.library', coord.z.library, 99);
 verify_number('Z.shelf', coord.z.shelf, 98);
@@ -75,6 +114,41 @@ function assert_throws(tc, fn, message) {
     }
     assert_true(tc, threw, message);
 }
+function sha256_hex(data) {
+    return crypto.createHash('sha256').update(data).digest('hex');
+}
+function assert_buffer_eq(tc, left, right, message) {
+    if (message === void 0) { message = ''; }
+    // compare by length + sha256 so a failure never floods the log with hex
+    var summary = function (b) { return "".concat(b.length, ":").concat(sha256_hex(b)); };
+    assert_eq(tc, summary(left), summary(right), message);
+}
+function assert_rejects(tc_1, promise_1) {
+    return __awaiter(this, arguments, void 0, function (tc, promise, message) {
+        var rejected, e_1;
+        if (message === void 0) { message = ''; }
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    rejected = false;
+                    _a.label = 1;
+                case 1:
+                    _a.trys.push([1, 3, , 4]);
+                    return [4 /*yield*/, promise];
+                case 2:
+                    _a.sent();
+                    return [3 /*break*/, 4];
+                case 3:
+                    e_1 = _a.sent();
+                    rejected = true;
+                    return [3 /*break*/, 4];
+                case 4:
+                    assert_true(tc, rejected, message);
+                    return [2 /*return*/];
+            }
+        });
+    });
+}
 var Tests = /** @class */ (function () {
     function Tests() {
         var _this = this;
@@ -121,6 +195,9 @@ var Tests = /** @class */ (function () {
             _this.test_scroll_manifest();
             _this.test_checksum_vectors();
             _this.test_phext_soundex_v1();
+            _this.test_binary();
+            _this.test_chain();
+            _this.test_chain_fixtures();
         };
         this.test_coordinate_parsing = function () {
             var example_coordinate = "9.8.7/6.5.4/3.2.1";
@@ -796,6 +873,343 @@ var Tests = /** @class */ (function () {
             var result = phext.soundex_v1(sample);
             assert_eq("PSV1", result, "36\x1741\x171\x174\x177\x1710\x171\x174\x177\x171\x171\x177\x177\x1713\x1816\x1816\x181\x184\x197\x1919\x197\x1910\x1a1\x1a4\x1a1\x1a7\x1a1\x1a7", "Soundex");
         };
+        // Binary scrolls — ported 1:1 from libphext-rs src/test_binary.rs.
+        this.test_binary = function () {
+            var coord = function (a) { return phext.to_coordinate(a); };
+            var dec = function (s) { var _a; return (_a = phext.decode_scroll(s)) !== null && _a !== void 0 ? _a : Buffer.from("<null>"); };
+            // encode/decode round trip
+            assert_eq("BN0", libphext_1.BINARY_SCROLL_HEADER, "phext-binary:1:base64", "header constant");
+            var empty = Buffer.alloc(0);
+            assert_eq("BN1", phext.encode_scroll(empty), "phext-binary:1:base64\n", "empty payload is the header line alone");
+            assert_buffer_eq("BN2", dec(phext.encode_scroll(empty)), empty, "empty round trip");
+            var all_bytes = Buffer.from(Array.from({ length: 256 }, function (_, i) { return i; }));
+            var all_scroll = phext.encode_scroll(all_bytes);
+            assert_true("BN3", phext.is_binary_scroll(all_scroll), "all-bytes scroll is binary");
+            assert_buffer_eq("BN4", dec(all_scroll), all_bytes, "every byte value round trips");
+            var foreign = Buffer.from([0xFF, 0xFE, 0x80, 0x00, 0x61, 0xC3, 0x28]);
+            assert_buffer_eq("BN5", dec(phext.encode_scroll(foreign)), foreign, "non-UTF-8 sequence round trips");
+            var big = Buffer.alloc(1024 * 1024 + 13);
+            for (var i = 0; i < big.length; ++i) {
+                big[i] = i % 256;
+            }
+            assert_buffer_eq("BN6", dec(phext.encode_scroll(big)), big, ">= 1 MiB payload round trips");
+            // decode rejects non-binary scrolls
+            assert_true("BN7", phext.decode_scroll("just some text") === null, "plain text is not binary");
+            assert_true("BN8", phext.decode_scroll("") === null, "empty is not binary");
+            assert_true("BN9", phext.decode_scroll("phext-binary:1:base64") === null, "header without line break is not binary");
+            assert_false("BN10", phext.is_binary_scroll("phext-binary:1:base64"), "no line break, no binary scroll");
+            var malformed = "phext-binary:1:base64\n!!! not base64 !!!";
+            assert_true("BN11", phext.is_binary_scroll(malformed), "malformed body is recognisably binary");
+            assert_true("BN12", phext.decode_scroll(malformed) === null, "malformed body does not decode");
+            // insert and fetch binary
+            var target = coord("1.1.1/1.1.1/1.1.2");
+            var payload = Buffer.from([0x00, 0x01, 0x02, 0xFE, 0xFF, 0x7F, 0x80]);
+            var doc = phext.insert("", coord("1.1.1/1.1.1/1.1.1"), "plain text scroll");
+            doc = phext.insert_binary(doc, target, payload);
+            assert_eq("BN13", phext.fetch(doc, coord("1.1.1/1.1.1/1.1.1")), "plain text scroll", "text scroll next door untouched");
+            assert_buffer_eq("BN14", phext.fetch_binary(doc, target), payload, "binary scroll fetches byte-identical");
+            var stored = phext.fetch(doc, target);
+            assert_true("BN15", phext.is_binary_scroll(stored), "stored form is the canonical binary scroll");
+            assert_buffer_eq("BN16", dec(stored), payload, "stored form decodes to the payload");
+            // fetch_binary fallbacks
+            var hello = phext.insert("", coord("1.1.1/1.1.1/1.1.1"), "hello");
+            assert_buffer_eq("BN17", phext.fetch_binary(hello, coord("1.1.1/1.1.1/1.1.1")), Buffer.from("hello"), "plain text yields its UTF-8 bytes");
+            assert_buffer_eq("BN18", phext.fetch_binary(hello, coord("9.9.9/9.9.9/9.9.9")), Buffer.alloc(0), "unoccupied coordinate yields no bytes");
+            var malformed_doc = phext.insert("", coord("1.1.1/1.1.1/1.1.1"), "phext-binary:1:base64\n!!!");
+            assert_buffer_eq("BN19", phext.fetch_binary(malformed_doc, coord("1.1.1/1.1.1/1.1.1")), Buffer.from("phext-binary:1:base64\n!!!"), "malformed binary scroll yields its own bytes verbatim");
+            // the ingestion rule: non-UTF-8 updates are base64-verbatim
+            var armored = Buffer.from([0xFF, 0x17, 0x1C, 0x80, 0x00]); // includes dimension-break bytes
+            var home = coord("1.1.1/1.1.1/1.1.1");
+            var replaced = phext.replace_bytes("", home, armored);
+            assert_true("BN20", phext.is_binary_scroll(phext.fetch(replaced, home)), "non-UTF-8 update stored as a binary scroll");
+            assert_buffer_eq("BN21", phext.fetch_binary(replaced, home), armored, "break bytes round-trip as content, not structure");
+            var inserted = phext.insert_bytes("", home, armored);
+            assert_buffer_eq("BN22", phext.fetch_binary(inserted, home), armored, "same rule through insert_bytes");
+            // the ingestion rule: UTF-8 updates stay text
+            var text_doc = phext.replace_bytes("", home, Buffer.from("ordinary text ✓", "utf-8"));
+            assert_eq("BN23", phext.fetch(text_doc, home), "ordinary text ✓", "UTF-8 update stays text");
+            assert_false("BN24", phext.is_binary_scroll(phext.fetch(text_doc, home)), "UTF-8 update is not a binary scroll");
+            assert_buffer_eq("BN25", phext.fetch_binary(text_doc, home), Buffer.from("ordinary text ✓", "utf-8"), "fetch_binary over text");
+            // ingest of a foreign byte stream
+            var stream = Buffer.concat([Buffer.from("hello"), Buffer.from([0x17]), Buffer.from([0xFF, 0xFE, 0x41, 0x80])]);
+            var ingested = phext.ingest(stream);
+            assert_eq("BN26", phext.fetch(ingested, home), "hello", "text scroll passes through verbatim");
+            var foreign_at = coord("1.1.1/1.1.1/1.1.2");
+            assert_true("BN27", phext.is_binary_scroll(phext.fetch(ingested, foreign_at)), "foreign scroll stored as a binary scroll");
+            assert_buffer_eq("BN28", phext.fetch_binary(ingested, foreign_at), Buffer.from([0xFF, 0xFE, 0x41, 0x80]), "foreign scroll reads back as the original bytes");
+            // ingest of a canonical phext is the identity
+            var canon = phext.insert("", home, "first");
+            canon = phext.insert(canon, coord("1.1.1/1.1.1/1.1.2"), "second ✓ scroll");
+            canon = phext.insert(canon, coord("2.1.1/1.3.1/1.1.1"), "far away");
+            assert_eq("BN29", phext.ingest(Buffer.from(canon, "utf-8")), canon, "ingest identity on canonical phext");
+            // ingest of empty and break-only streams: no throw, no content
+            assert_eq("BN30", phext.fetch(phext.ingest(Buffer.alloc(0)), home), "", "ingest empty stream");
+            assert_eq("BN31", phext.fetch(phext.ingest(Buffer.from([0x17, 0x18])), home), "", "ingest break-only stream");
+            // phokenize_bytes matches phokenize
+            var mixed = "alpha\x17beta\x18gamma";
+            var text_parts = phext.phokenize(mixed);
+            var byte_parts = phext.phokenize_bytes(Buffer.from(mixed, "utf-8"));
+            assert_number_eq("BN32", byte_parts.length, text_parts.length, "same segmentation");
+            for (var p = 0; p < text_parts.length; ++p) {
+                assert_eq("BN33.".concat(p), byte_parts[p].coord.to_string(), text_parts[p].coord.to_string(), "same coordinate");
+                assert_buffer_eq("BN34.".concat(p), byte_parts[p].bytes, Buffer.from(text_parts[p].scroll, "utf-8"), "same bytes");
+            }
+        };
+        // Chains — ported 1:1 from libphext-rs src/test_chain.rs.
+        this.test_chain = function () {
+            var rt = function (tc, stream) {
+                assert_eq(tc, phext.serialize_chains(phext.parse_chains(stream)), stream, "parse + serialize round trip");
+            };
+            // chain-free input is one unclosed chain
+            var doc = "alpha\x17beta\x01gamma";
+            var chains = phext.parse_chains(doc);
+            assert_number_eq("CH1", chains.length, 1, "one chain");
+            assert_eq("CH2", chains[0].members.join("\x02"), doc, "the whole stream is the single member");
+            assert_false("CH3", chains[0].closed, "unclosed at EOF");
+            assert_eq("CH4", phext.fetch(doc, phext.to_coordinate("1.1.1/1.1.1/1.1.2")), "beta", "single-phext behaviour untouched");
+            assert_eq("CH5", phext.fetch(doc, phext.to_coordinate("2.1.1/1.1.1/1.1.1")), "gamma", "library break still structural");
+            rt("CH6", doc);
+            // two phexts chained and closed
+            var two = "edition one".concat(phext.CHAIN_BREAK, "edition two").concat(phext.CHAIN_CLOSE);
+            chains = phext.parse_chains(two);
+            assert_number_eq("CH7", chains.length, 1, "one chain");
+            assert_eq("CH8", chains[0].members.join("|"), "edition one|edition two", "members in order");
+            assert_true("CH9", chains[0].closed, "closed by CHAIN_CLOSE");
+            rt("CH10", two);
+            // unclosed chain at EOF
+            chains = phext.parse_chains("one\x02two");
+            assert_number_eq("CH11", chains[0].members.length, 2, "two members");
+            assert_false("CH12", chains[0].closed, "a chain ending at EOF reports unclosed");
+            rt("CH13", "one\x02two");
+            // two chains in one stream
+            chains = phext.parse_chains("a\x02b\x03c\x02d\x03");
+            assert_number_eq("CH14", chains.length, 2, "two chains");
+            assert_eq("CH15", chains[0].members.join("|"), "a|b", "first chain members");
+            assert_true("CH16", chains[0].closed && chains[1].closed, "both closed");
+            assert_eq("CH17", chains[1].members.join("|"), "c|d", "second chain members");
+            rt("CH18", "a\x02b\x03c\x02d\x03");
+            var mixed = phext.parse_chains("a\x03b");
+            assert_number_eq("CH19", mixed.length, 2, "closed then unclosed stays two chains");
+            assert_true("CH20", mixed[0].closed, "first closed");
+            assert_false("CH21", mixed[1].closed, "second unclosed");
+            rt("CH22", "a\x03b");
+            // chained members carry full phexts
+            var first = "root\x17second scroll";
+            var second = phext.insert("", phext.to_coordinate("1.1.1/1.1.1/1.1.3"), "third edition");
+            var stream = "".concat(first, "\u0002").concat(second, "\u0003");
+            chains = phext.parse_chains(stream);
+            assert_number_eq("CH23", chains[0].members.length, 2, "two members");
+            assert_eq("CH24", phext.fetch(chains[0].members[0], phext.to_coordinate("1.1.1/1.1.1/1.1.2")), "second scroll", "member 1 scrolls resolve inside the member");
+            assert_eq("CH25", phext.fetch(chains[0].members[1], phext.to_coordinate("1.1.1/1.1.1/1.1.3")), "third edition", "member 2 restarts at home");
+            assert_eq("CH26", phext.fetch(chains[0].members[1], phext.to_coordinate("1.1.1/1.1.1/1.1.1")), "", "member 2 home is empty");
+            rt("CH27", stream);
+            // editions in succession read in order
+            chains = phext.parse_chains("v1\x02v2\x02v3\x03");
+            assert_eq("CH28", chains[0].members.join("|"), "v1|v2|v3", "members stay ordered");
+            assert_true("CH29", chains[0].closed, "closed");
+            // empty and break-only streams
+            chains = phext.parse_chains("");
+            assert_number_eq("CH30", chains.length, 1, "empty stream is one chain");
+            assert_eq("CH31", chains[0].members.join("|"), "", "holding one empty phext");
+            assert_false("CH32", chains[0].closed, "unclosed");
+            rt("CH33", "");
+            chains = phext.parse_chains("\x03");
+            assert_true("CH34", chains[0].closed, "a lone close terminates the chain");
+            assert_eq("CH35", chains[0].members.join("|"), "", "one empty member");
+            rt("CH36", "\x03");
+            assert_eq("CH37", phext.parse_chains("a\x02")[0].members.join("|"), "a|", "trailing break preserves its empty member");
+            assert_eq("CH38", phext.parse_chains("\x02b")[0].members.join("|"), "|b", "leading break preserves its empty member");
+            assert_number_eq("CH39", phext.parse_chains("\x02\x02")[0].members.length, 3, "two breaks, three members");
+            rt("CH40", "a\x02");
+            rt("CH41", "\x02b");
+            rt("CH42", "\x02\x02");
+            rt("CH43", "\x02");
+            chains = phext.parse_chains("a\x03\x03");
+            assert_number_eq("CH44", chains.length, 2, "back-to-back closes are two chains");
+            assert_true("CH45", chains[0].closed && chains[1].closed, "both closed");
+            assert_eq("CH46", chains[1].members.join("|"), "", "second holds an empty phext");
+            rt("CH47", "a\x03\x03");
+            // serialize from constructed chains
+            var built = new libphext_1.Chain();
+            assert_false("CH48", built.closed, "new chain is unclosed");
+            assert_eq("CH49", built.serialize(), "", "empty chain serializes empty");
+            built.members.push("v1");
+            built.members.push("v2");
+            assert_eq("CH50", built.serialize(), "v1\x02v2", "members joined by CHAIN_BREAK");
+            built.closed = true;
+            assert_eq("CH51", built.serialize(), "v1\x02v2\x03", "trailing CHAIN_CLOSE when closed");
+            assert_eq("CH52", phext.serialize_chains([built]), "v1\x02v2\x03", "serialize_chains over one chain");
+            // canon-shaped documents parse unchanged: the harness corpus
+            // stands in for the canon phexts (verified here to contain no
+            // chain bytes, so it reads as one unclosed chain, byte-identical)
+            var corpus = fs.readFileSync('unit-test.phext', 'utf-8');
+            assert_false("CH53", corpus.includes(phext.CHAIN_BREAK), "corpus has no chain break");
+            assert_false("CH54", corpus.includes(phext.CHAIN_CLOSE), "corpus has no chain close");
+            chains = phext.parse_chains(corpus);
+            assert_number_eq("CH55", chains.length, 1, "one chain");
+            assert_eq("CH56", chains[0].members[0], corpus, "the member is the document");
+            assert_false("CH57", chains[0].closed, "unclosed");
+            rt("CH58", corpus);
+            // the chain layer does not touch member structure
+            chains = phext.parse_chains("x\x17y\x02z\x17w\x03");
+            assert_eq("CH59", chains[0].members.join("|"), "x\x17y|z\x17w", "splitting is stream-level only");
+            assert_number_eq("CH60", phext.phokenize(chains[0].members[1]).length, 2, "member scrolls intact");
+            rt("CH61", "x\x17y\x02z\x17w\x03");
+            // multiverse addressing
+            var mv = new libphext_1.Chain(["U1 home", "U2 home"], true);
+            assert_eq("CH62", mv.fetch("1.1.1/1.1.1/1.1.1"), "U1 home", "bare address is universe 1");
+            assert_eq("CH63", mv.fetch("$1:1.1.1/1.1.1/1.1.1"), "U1 home", "$1: is universe 1");
+            assert_eq("CH64", mv.fetch("$2:1.1.1/1.1.1/1.1.1"), "U2 home", "$2: is universe 2");
+            assert_eq("CH65", mv.fetch("$3:1.1.1/1.1.1/1.1.1"), "", "out-of-range universe yields empty");
+            assert_true("CH66", phext.parse_universe_address("$0:1.1.1/1.1.1/1.1.1") === null, "$0: is invalid");
+            var parsed12 = phext.parse_universe_address("$12:2.1.1/1.1.1/1.1.1");
+            assert_true("CH67", parsed12 !== null && parsed12[0] == 12, "$12: parses to universe 12");
+            assert_eq("CH68", mv.fetch("$x:1.1.1/1.1.1/1.1.1"), "", "malformed universe prefix yields empty");
+            // adjacent closes are two empty chains
+            chains = phext.parse_chains("\x03\x03");
+            assert_number_eq("CH69", chains.length, 2, "two chains");
+            assert_true("CH70", chains.every(function (c) { return c.closed; }), "both closed");
+            rt("CH71", "\x03\x03");
+        };
+        // Shared libphext 0.6 chain conformance fixtures (tests/fixtures/chains,
+        // generated by libphext-rs 0.6.0 itself — see FIXTURES.md there).
+        // Every case: verify the input's identity, parse and check chain /
+        // member structure and per-scroll digests against the manifest,
+        // re-serialize byte-identically, and run every fetch byte-exact,
+        // including the manifest's `found` flag for each fetch.
+        this.test_chain_fixtures = function () {
+            var root = 'tests/fixtures/chains';
+            var manifest = JSON.parse(fs.readFileSync("".concat(root, "/manifest.json"), 'utf-8'));
+            assert_number_eq("FX0", manifest.case_count, 10, "fixture case count");
+            var _loop_1 = function (c) {
+                var tc = "FX-".concat(c.case);
+                var dir = "".concat(root, "/").concat(c.case);
+                var data = fs.readFileSync("".concat(dir, "/").concat(c.input_file));
+                assert_number_eq("".concat(tc, "-inlen"), data.length, c.input_bytes, "input byte length");
+                assert_eq("".concat(tc, "-insha"), sha256_hex(data), c.input_sha256, "input sha256");
+                var chains = phext.parse_chains(data.toString('utf-8'));
+                assert_number_eq("".concat(tc, "-nchains"), chains.length, c.chains.length, "chain count");
+                c.chains.forEach(function (ec, ci) {
+                    var pc = chains[ci];
+                    assert_eq("".concat(tc, "-c").concat(ci, "-closed"), String(pc.closed), String(ec.closed), "closed flag");
+                    assert_number_eq("".concat(tc, "-c").concat(ci, "-nmem"), pc.members.length, ec.members.length, "member count");
+                    ec.members.forEach(function (em, mi) {
+                        var mbytes = Buffer.from(pc.members[mi], 'utf-8');
+                        assert_number_eq("".concat(tc, "-c").concat(ci, "m").concat(mi, "-bytes"), mbytes.length, em.bytes, "member byte length");
+                        assert_eq("".concat(tc, "-c").concat(ci, "m").concat(mi, "-sha"), sha256_hex(mbytes), em.sha256, "member sha256");
+                        // scroll enumeration via the byte-level walker, whose
+                        // segmentation is the reference phokenize's
+                        var scrolls = phext.phokenize_bytes(mbytes);
+                        assert_number_eq("".concat(tc, "-c").concat(ci, "m").concat(mi, "-nscrolls"), scrolls.length, em.scroll_count, "scroll count");
+                        em.scrolls.forEach(function (es, si) {
+                            assert_eq("".concat(tc, "-c").concat(ci, "m").concat(mi, "s").concat(si, "-coord"), scrolls[si].coord.to_string(), es.c, "scroll coordinate");
+                            assert_number_eq("".concat(tc, "-c").concat(ci, "m").concat(mi, "s").concat(si, "-blen"), scrolls[si].bytes.length, es.b, "scroll byte length");
+                            assert_eq("".concat(tc, "-c").concat(ci, "m").concat(mi, "s").concat(si, "-bsha"), sha256_hex(scrolls[si].bytes), es.s, "scroll sha256");
+                        });
+                    });
+                });
+                assert_buffer_eq("".concat(tc, "-roundtrip"), Buffer.from(phext.serialize_chains(chains), 'utf-8'), data, "byte-identical round trip");
+                c.fetches.forEach(function (f, fi) {
+                    var expected = fs.readFileSync("".concat(dir, "/").concat(f.expected_file));
+                    assert_number_eq("".concat(tc, "-f").concat(fi, "-elen"), expected.length, f.expected_bytes, "expected fetch length");
+                    assert_eq("".concat(tc, "-f").concat(fi, "-esha"), sha256_hex(expected), f.expected_sha256, "expected fetch sha256");
+                    var result = chains[f.chain_index].fetch(f.address);
+                    assert_buffer_eq("".concat(tc, "-f").concat(fi, "-fetch"), Buffer.from(result, 'utf-8'), expected, "fetch ".concat(f.address));
+                    // `found`: the coordinate appears in the reference's
+                    // phokenize(member) output. The byte walker's coordinate
+                    // set is the same set: it lists the lone empty home
+                    // scroll of an entirely empty member (found=true in the
+                    // manifest for the empty-member cases) and omits interior
+                    // present-but-empty scrolls (found=false, e.g. universe
+                    // 2's scroll 2 in multiverse-addressing).
+                    var member = chains[f.chain_index].members[f.universe - 1];
+                    var found = false;
+                    if (member !== undefined) {
+                        found = phext.phokenize_bytes(Buffer.from(member, 'utf-8'))
+                            .some(function (s) { return s.coord.to_string() == f.coordinate; });
+                    }
+                    assert_eq("".concat(tc, "-f").concat(fi, "-found"), String(found), String(f.found), "found flag for ".concat(f.address));
+                });
+            };
+            for (var _i = 0, _a = manifest.cases; _i < _a.length; _i++) {
+                var c = _a[_i];
+                _loop_1(c);
+            }
+        };
+        // The xz seal — ported from libphext-rs src/test_seal.rs. Async
+        // because lzma-native's API is promise-based (see Phext.seal).
+        this.test_seal = function () { return __awaiter(_this, void 0, void 0, function () {
+            var corpus, sealed, _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, doc, _l, _m, _o, _p, twice, _q, _r, rs_sealed, _s, _t, _u, _v;
+            return __generator(this, function (_w) {
+                switch (_w.label) {
+                    case 0:
+                        assert_number_eq("SL0", libphext_1.SEAL_PRESET, 6, "seal preset");
+                        corpus = fs.readFileSync('unit-test.phext', 'utf-8');
+                        return [4 /*yield*/, phext.seal(corpus)];
+                    case 1:
+                        sealed = _w.sent();
+                        assert_true("SL1", sealed.length > 0, "sealed corpus is non-empty");
+                        assert_buffer_eq("SL2", sealed.subarray(0, 6), Buffer.from([0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]), "xz magic bytes");
+                        _a = assert_eq;
+                        _b = ["SL3"];
+                        return [4 /*yield*/, phext.unseal_string(sealed)];
+                    case 2:
+                        _a.apply(void 0, _b.concat([_w.sent(), corpus, "seal round trip on the corpus"]));
+                        _c = assert_eq;
+                        _d = ["SL4"];
+                        _f = (_e = phext).unseal_string;
+                        return [4 /*yield*/, phext.seal("")];
+                    case 3: return [4 /*yield*/, _f.apply(_e, [_w.sent()])];
+                    case 4:
+                        _c.apply(void 0, _d.concat([_w.sent(), "", "empty round trip"]));
+                        _g = assert_buffer_eq;
+                        _h = ["SL5"];
+                        _k = (_j = phext).unseal;
+                        return [4 /*yield*/, phext.seal("hello phext")];
+                    case 5: return [4 /*yield*/, _k.apply(_j, [_w.sent()])];
+                    case 6:
+                        _g.apply(void 0, _h.concat([_w.sent(), Buffer.from("hello phext"), "small round trip"]));
+                        doc = "cover text\x17phext-binary:1:base64\nAAEC/f7/fw==\x17after";
+                        _l = assert_eq;
+                        _m = ["SL6"];
+                        _p = (_o = phext).unseal_string;
+                        return [4 /*yield*/, phext.seal(doc)];
+                    case 7: return [4 /*yield*/, _p.apply(_o, [_w.sent()])];
+                    case 8:
+                        _l.apply(void 0, _m.concat([_w.sent(), doc, "binary scrolls survive the seal"]));
+                        twice = "the same phext, sealed twice\x17the same phext, sealed twice";
+                        _q = assert_buffer_eq;
+                        _r = ["SL7"];
+                        return [4 /*yield*/, phext.seal(twice)];
+                    case 9:
+                        _r = _r.concat([_w.sent()]);
+                        return [4 /*yield*/, phext.seal(twice)];
+                    case 10:
+                        _q.apply(void 0, _r.concat([_w.sent(), "sealing is deterministic"]));
+                        rs_sealed = Buffer.from("fd377a585a000004e6d6b4460200210116000000742fe5a301000a68656c6c6f20706865787400002cc34e29d15d0ef00001230bc21bfd091fb6f37d010000000004595a", "hex");
+                        _s = assert_buffer_eq;
+                        _t = ["SL8"];
+                        return [4 /*yield*/, phext.seal("hello phext")];
+                    case 11:
+                        _s.apply(void 0, _t.concat([_w.sent(), rs_sealed, "seal bytes identical to libphext-rs"]));
+                        _u = assert_eq;
+                        _v = ["SL9"];
+                        return [4 /*yield*/, phext.unseal_string(rs_sealed)];
+                    case 12:
+                        _u.apply(void 0, _v.concat([_w.sent(), "hello phext", "unseals libphext-rs output"]));
+                        return [4 /*yield*/, assert_rejects("SL10", phext.unseal(Buffer.from("this is not an xz stream")), "unseal rejects non-xz data")];
+                    case 13:
+                        _w.sent();
+                        return [4 /*yield*/, assert_rejects("SL11", phext.unseal(Buffer.alloc(0)), "unseal rejects empty input")];
+                    case 14:
+                        _w.sent();
+                        return [4 /*yield*/, assert_rejects("SL12", phext.unseal_string(Buffer.from("phext, but unsealed")), "unseal_string rejects non-xz data")];
+                    case 15:
+                        _w.sent();
+                        return [2 /*return*/];
+                }
+            });
+        }); };
     }
     ;
     Tests.prototype.test_coordinate_based_replace = function () {
@@ -1031,5 +1445,16 @@ var Tests = /** @class */ (function () {
 }());
 var runner = new Tests();
 runner.run();
-var result = failed == 0 ? "Success" : "Failure";
-console.log("Result: ".concat(result, " (").concat(passed, " passed ").concat(failed, " failed)"));
+(function () { return __awaiter(void 0, void 0, void 0, function () {
+    var result;
+    return __generator(this, function (_a) {
+        switch (_a.label) {
+            case 0: return [4 /*yield*/, runner.test_seal()];
+            case 1:
+                _a.sent();
+                result = failed == 0 ? "Success" : "Failure";
+                console.log("Result: ".concat(result, " (").concat(passed, " passed ").concat(failed, " failed)"));
+                return [2 /*return*/];
+        }
+    });
+}); })();

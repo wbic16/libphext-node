@@ -3,7 +3,8 @@
 #
 # There is no unit-test runner in this repo (`npm test` is the default
 # "no test specified" stub). The real harness is test-app/index.ts:
-# ~217 assertions that print "Result: Success (N passed 0 failed)".
+# ~274 assertions at 0.4.0 (the 0.6.0 suites add binary, chain, fixture,
+# and seal assertions on top) printing "Result: Success (N passed 0 failed)".
 #
 # This script reproduces the harness run from a clean clone:
 #   1. Compiles src/index.ts (+ type declarations) with the repo's
@@ -44,14 +45,18 @@ printf '{"name":"libphext","version":"%s","type":"module","main":"index.js","typ
 # The library's runtime dependencies must resolve inside the scratch app:
 # node module resolution walks up from node_modules/libphext, so link them
 # in from the repo's install. ('buffer' needs no link — it is a node core
-# module; xxh3-ts is a real package.)
-for dep in xxh3-ts; do
+# module; xxh3-ts and lzma-native are real packages.)
+for dep in xxh3-ts lzma-native; do
   if [ -d "$REPO/node_modules/$dep" ]; then
     ln -s "$REPO/node_modules/$dep" "$APP/node_modules/$dep"
   fi
 done
 
 cp test-app/index.ts test-app/unit-test.phext "$APP/"
+# The harness's chain-fixture suite reads the shared conformance fixtures
+# from tests/fixtures/chains relative to its working directory; link the
+# repo's copy in (read-only use — the harness never writes there).
+ln -s "$REPO/tests" "$APP/tests"
 ( cd "$APP" && "$TSC" index.ts --target ES2020 --module ES2020 \
     --moduleResolution node --skipLibCheck --types node \
     --typeRoots "$REPO/node_modules/@types" )
