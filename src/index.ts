@@ -901,6 +901,141 @@ export class Phext {
 	};
 
 	// -------------------------------------------------------------------------------------------------------
+	// Line/column addressing (0.6.1) — ported 1:1 from libphext-rs
+	// src/phext.rs (the addressing section at the end of that file).
+	//
+	// A point address is "[$N:]<9D coordinate>@<line>,<column>": the
+	// multiverse prefix and the coordinate exactly as in
+	// parse_universe_address, plus a within-scroll caret position. Line
+	// and column are 1-based; a position names a caret boundary (column 1
+	// is the boundary before the line's first character; a line of n
+	// characters has valid columns 1..n+1), and columns count Unicode
+	// scalar values — JS strings are UTF-16, so all counting here walks
+	// code points (for..of / Array.from), never .length or indexing. A
+	// point may carry "+<offsetChars>": select forward that many
+	// characters (scalars) from the point, counted within the scroll,
+	// terminating at the scroll boundary.
+	//
+	// A range address is two point addresses joined by one hyphen:
+	// "<point>-<point>". The endpoints may span scrolls and universes; an
+	// endpoint without "@" names its whole scroll (as start: its first
+	// boundary; as end: its last). Canonical form: endpoints in ascending
+	// (universe, coordinate, line, column) order — direction is
+	// discarded — "$1:" never written, integers in minimal decimal form.
+	// Out-of-range endpoints fail at resolution, never clamp.
+	// -------------------------------------------------------------------------------------------------------
+
+	// parses a v0.6.1 point address:
+	// "[$N:]<coordinate>[@<line>,<column>[+<offsetChars>]]". Returns null
+	// on any malformed input: universe 0, a coordinate component below
+	// 1, a line or column below 1, a sign anywhere, or trailing
+	// structure. "$1:" is accepted on input; the canonical serialized
+	// form never emits it.
+	parse_point_address = (address: string): PointAddress | null => {
+		var universe = 1;
+		var rest = address;
+		if (address.startsWith('$')) {
+			const stripped = address.substring(1);
+			const colon = stripped.indexOf(':');
+			if (colon < 0) { return null; }
+			const n = parse_address_uint(stripped.substring(0, colon));
+			if (n === null || n < 1) { return null; }
+			universe = n;
+			rest = stripped.substring(colon + 1);
+		}
+		var coord_part = rest;
+		var pos_part: string | null = null;
+		const at_index = rest.indexOf('@');
+		if (at_index >= 0) {
+			coord_part = rest.substring(0, at_index);
+			pos_part = rest.substring(at_index + 1);
+			if (pos_part.indexOf('@') >= 0) { return null; }
+		}
+		const coordinate = parse_address_coordinate(coord_part);
+		if (coordinate === null) { return null; }
+		var position: ScrollPosition | null = null;
+		var offset: number | null = null;
+		if (pos_part !== null) {
+			const comma = pos_part.indexOf(',');
+			if (comma < 0) { return null; }
+			const line = parse_address_uint(pos_part.substring(0, comma));
+			if (line === null) { return null; }
+			const col_part = pos_part.substring(comma + 1);
+			var col_text = col_part;
+			var offset_value: number | null = null;
+			const plus = col_part.indexOf('+');
+			if (plus >= 0) {
+				col_text = col_part.substring(0, plus);
+				offset_value = parse_address_uint(col_part.substring(plus + 1));
+				if (offset_value === null) { return null; }
+			}
+			const column = parse_address_uint(col_text);
+			if (column === null) { return null; }
+			if (line < 1 || column < 1) { return null; }
+			position = { line: line, column: column };
+			offset = offset_value;
+		}
+		return { universe: universe, coordinate: coordinate, position: position, offset: offset };
+	};
+
+	// parses a v0.6.1 range address: exactly two point addresses joined
+	// by one hyphen. The endpoints are normalized to ascending order
+	// (direction is discarded, per the ratified spec). Range endpoints
+	// may not carry a "+offset" — the offset form never takes a second
+	// endpoint. Returns null on malformed input.
+	parse_range_address = (address: string): RangeAddress | null => {
+		const dash = address.indexOf('-');
+		if (dash < 0) { return null; }
+		const first = address.substring(0, dash);
+		const second = address.substring(dash + 1);
+		if (second.indexOf('-') >= 0) { return null; }
+		const a = this.parse_point_address(first);
+		if (a === null) { return null; }
+		const b = this.parse_point_address(second);
+		if (b === null) { return null; }
+		if (a.offset !== null || b.offset !== null) { return null; }
+		if (endpoint_cmp(a, true, b, false) > 0) {
+			return { start: b, end: a };
+		}
+		return { start: a, end: b };
+	};
+
+	// the canonical serialization of a point address (the counterpart of
+	// libphext-rs's Display for PointAddress): "$1:" never written,
+	// integers in minimal decimal form.
+	serialize_point_address = (point: PointAddress): string => {
+		var result = "";
+		if (point.universe > 1) { result += `$${point.universe}:`; }
+		result += point.coordinate.to_string();
+		if (point.position !== null) {
+			result += `@${point.position.line},${point.position.column}`;
+			if (point.offset !== null) { result += `+${point.offset}`; }
+		}
+		return result;
+	};
+
+	// the canonical serialization of a range address: its two endpoints
+	// in ascending order, joined by one hyphen.
+	serialize_range_address = (range: RangeAddress): string => {
+		return `${this.serialize_point_address(range.start)}-${this.serialize_point_address(range.end)}`;
+	};
+
+	// The scroll text at a coordinate in one member phext, in the
+	// phokenize sense of presence: a coordinate is present exactly when
+	// phokenize enumerates it. The byte-level walker carries the
+	// reference enumeration (the text phokenize stops at the first empty
+	// scroll — see the chain-fixture suite), so presence and text are
+	// read from phokenize_bytes; member text is valid UTF-8, so each
+	// enumerated scroll's bytes decode back exactly.
+	addressed_scroll_text = (member: string, target: Coordinate): string | null => {
+		const scrolls = this.phokenize_bytes(Buffer.from(member, 'utf-8'));
+		for (const s of scrolls) {
+			if (s.coord.equals(target)) { return s.bytes.toString('utf-8'); }
+		}
+		return null;
+	};
+
+	// -------------------------------------------------------------------------------------------------------
 	// The xz seal (0.5.0) — semantics ported 1:1 from libphext-rs
 	// src/seal.rs; call shape adapted to the Node binding.
 	//
@@ -995,7 +1130,227 @@ export class Chain {
 		if (member === undefined) { return ""; }
 		return __internal_phext.fetch(member, coord);
 	};
+	// resolves a point address against this chain: [universe,
+	// coordinate, character offset within the scroll] — the counterpart
+	// of libphext-rs Chain::resolve_point's (usize, Coordinate, usize)
+	// tuple. A point without "@" resolves to offset 0 of its scroll.
+	// Null when the universe or scroll is absent or the position is out
+	// of range — never clamps.
+	resolve_point = (point: PointAddress): [number, Coordinate, number] | null => {
+		if (point.universe < 1 || point.universe > this.members.length) { return null; }
+		const text = __internal_phext.addressed_scroll_text(this.members[point.universe - 1], point.coordinate);
+		if (text === null) { return null; }
+		var offset = 0;
+		if (point.position !== null) {
+			const resolved = resolve_scroll_offset(text, point.position);
+			if (resolved === null) { return null; }
+			offset = resolved;
+		}
+		return [point.universe, point.coordinate, offset];
+	};
+
+	// fetches a point address string. A bare point is a caret: it
+	// fetches the empty string. The offset form fetches the selected
+	// characters: from the point, forward `offset` characters (scalars)
+	// within the scroll, terminating at the scroll boundary. Any parse
+	// or resolution failure fetches the empty string, as fetch does.
+	fetch_point = (address: string): string => {
+		const point = __internal_phext.parse_point_address(address);
+		if (point === null) { return ""; }
+		if (point.offset === null) { return ""; }
+		const resolved = this.resolve_point(point);
+		if (resolved === null) { return ""; }
+		const text = __internal_phext.addressed_scroll_text(this.members[point.universe - 1], point.coordinate);
+		if (text === null) { return ""; }
+		return Array.from(text).slice(resolved[2], resolved[2] + point.offset).join('');
+	};
+
+	// resolves a range against this chain into per-scroll segments:
+	// [universe, coordinate, segment text] in ascending order. Middle
+	// scrolls contribute their whole text; the endpoint scrolls
+	// contribute from/to their endpoint boundaries (an endpoint without
+	// "@" contributes its whole scroll). Null when either endpoint fails
+	// to resolve — an out-of-range endpoint is an error, never a clamp.
+	resolve_range = (range: RangeAddress): Array<[number, Coordinate, string]> | null => {
+		const start = range.start;
+		const end = range.end;
+		if (start.universe < 1 || end.universe > this.members.length || start.universe > end.universe) { return null; }
+		// both endpoint scrolls must be present, and both endpoint
+		// positions must resolve
+		if (this.resolve_point({ universe: start.universe, coordinate: start.coordinate, position: start.position, offset: null }) === null) { return null; }
+		if (this.resolve_point({ universe: end.universe, coordinate: end.coordinate, position: end.position, offset: null }) === null) { return null; }
+		const segments: Array<[number, Coordinate, string]> = [];
+		for (var universe = start.universe; universe <= end.universe; ++universe) {
+			const member = this.members[universe - 1];
+			const scrolls = __internal_phext.phokenize_bytes(Buffer.from(member, 'utf-8'));
+			scrolls.sort((a, b) => {
+				if (a.coord.less_than(b.coord)) { return -1; }
+				if (a.coord.greater_than(b.coord)) { return 1; }
+				return 0;
+			});
+			for (const s of scrolls) {
+				const coord = s.coord;
+				if (universe == start.universe && coord.less_than(start.coordinate)) { continue; }
+				if (universe == end.universe && coord.greater_than(end.coordinate)) { continue; }
+				const scroll_text = s.bytes.toString('utf-8');
+				const chars = Array.from(scroll_text);
+				var lo = 0;
+				var hi = chars.length;
+				if (universe == start.universe && coord.equals(start.coordinate)) {
+					if (start.position !== null) {
+						const r = resolve_scroll_offset(scroll_text, start.position);
+						if (r === null) { return null; }
+						lo = r;
+					}
+				}
+				if (universe == end.universe && coord.equals(end.coordinate)) {
+					if (end.position !== null) {
+						const r = resolve_scroll_offset(scroll_text, end.position);
+						if (r === null) { return null; }
+						hi = r;
+					} else {
+						hi = chars.length;
+					}
+				}
+				if (lo > hi) { return null; }
+				segments.push([universe, coord, chars.slice(lo, hi).join('')]);
+			}
+		}
+		return segments;
+	};
+
+	// fetches a range address string: the spanned text with phext
+	// structure bytes preserved — the covered segments re-assembled at
+	// their coordinates into a phext (chain) fragment (scroll breaks
+	// between covered scrolls inside a universe, CHAIN_BREAK between
+	// universes, never a trailing CHAIN_CLOSE: a fragment is an
+	// excerpt, not a terminated chain), so the result round-trips as a
+	// phext fragment. Empty segments contribute nothing. Any parse or
+	// resolution failure fetches the empty string, as fetch does.
+	fetch_range = (address: string): string => {
+		const range = __internal_phext.parse_range_address(address);
+		if (range === null) { return ""; }
+		const segments = this.resolve_range(range);
+		if (segments === null) { return ""; }
+		const members: Array<string> = [];
+		for (var universe = range.start.universe; universe <= range.end.universe; ++universe) {
+			var member = "";
+			for (const seg of segments) {
+				if (seg[0] != universe) { continue; }
+				if (seg[2].length > 0) {
+					member = __internal_phext.insert(member, seg[1], seg[2]);
+				}
+			}
+			members.push(member);
+		}
+		return new Chain(members, false).serialize();
+	};
+
 }
+
+// A caret boundary inside one scroll (0.6.1): 1-based line and column.
+// Column 1 is the boundary before the line's first character; a line of
+// n characters has valid columns 1..n+1. Columns count Unicode scalar
+// values.
+export interface ScrollPosition {
+	line: number;
+	column: number;
+}
+
+// One parsed point address (0.6.1): universe (1-based; 1 when the "$N:"
+// prefix is absent), the 9D coordinate, an optional caret position, and
+// an optional forward offset in characters (Unicode scalar values).
+export interface PointAddress {
+	universe: number;
+	coordinate: Coordinate;
+	position: ScrollPosition | null;
+	offset: number | null;
+}
+
+// A parsed range (0.6.1): two point endpoints, normalized to ascending
+// order at parse time (direction is discarded).
+export interface RangeAddress {
+	start: PointAddress;
+	end: PointAddress;
+}
+
+// An unsigned decimal integer in the address language: ASCII digits
+// only, at least one, no sign, ever. Leading zeros parse by value.
+// Returns null for anything else — including values a JS number cannot
+// represent exactly: libphext-rs parses into usize, and an integer past
+// Number.MAX_SAFE_INTEGER cannot be held exactly here, so it is
+// rejected rather than silently rounded.
+function parse_address_uint(text: string): number | null {
+	if (text.length == 0 || !/^[0-9]+$/.test(text)) { return null; }
+	const value = Number(text);
+	if (!Number.isSafeInteger(value)) { return null; }
+	return value;
+}
+
+// A 9D coordinate in the address language: three arms of three
+// dot-separated unsigned integers, every component >= 1. Returns null
+// on any other shape. (The Coordinate constructor sanitizes stray
+// values toward 1, so the address grammar validates strictly here
+// first, then builds the Coordinate from the canonical string.)
+function parse_address_coordinate(text: string): Coordinate | null {
+	const arms = text.split('/');
+	if (arms.length != 3) { return null; }
+	const values: Array<number> = [];
+	for (const arm of arms) {
+		const parts = arm.split('.');
+		if (parts.length != 3) { return null; }
+		for (const part of parts) {
+			const value = parse_address_uint(part);
+			if (value === null || value < 1) { return null; }
+			values.push(value);
+		}
+	}
+	const canonical = `${values[0]}.${values[1]}.${values[2]}/${values[3]}.${values[4]}.${values[5]}/${values[6]}.${values[7]}.${values[8]}`;
+	return new Coordinate(canonical);
+}
+
+// The sort key of a range endpoint: its position when it carries one;
+// an endpoint without "@" sorts by role — as start, its scroll's first
+// boundary (1, 1); as end, its scroll's last boundary (past every real
+// position).
+function endpoint_position_key(point: PointAddress, is_start: boolean): [number, number] {
+	if (point.position !== null) { return [point.position.line, point.position.column]; }
+	return is_start ? [1, 1] : [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+}
+
+// Total order on range endpoints: (universe, coordinate, line, column),
+// with a missing "@" read by role (see endpoint_position_key). Returns
+// a negative number, 0, or a positive number, comparator-style.
+function endpoint_cmp(a: PointAddress, a_is_start: boolean, b: PointAddress, b_is_start: boolean): number {
+	if (a.universe != b.universe) { return a.universe < b.universe ? -1 : 1; }
+	if (a.coordinate.less_than(b.coordinate)) { return -1; }
+	if (a.coordinate.greater_than(b.coordinate)) { return 1; }
+	const ka = endpoint_position_key(a, a_is_start);
+	const kb = endpoint_position_key(b, b_is_start);
+	if (ka[0] != kb[0]) { return ka[0] < kb[0] ? -1 : 1; }
+	if (ka[1] != kb[1]) { return ka[1] < kb[1] ? -1 : 1; }
+	return 0;
+}
+
+// Resolves a caret position inside one scroll to a character (scalar)
+// offset. Null when the line or column is past the scroll's extent —
+// never clamps. The walk iterates code points (for..of over the
+// string), so columns and offsets count Unicode scalar values, never
+// UTF-16 code units or bytes.
+function resolve_scroll_offset(text: string, pos: ScrollPosition): number | null {
+	if (pos.line < 1 || pos.column < 1) { return null; }
+	var line = 1;
+	var column = 1;
+	var offset = 0;
+	for (const ch of text) {
+		if (line == pos.line && column == pos.column) { return offset; }
+		if (ch == '\n') { line += 1; column = 1; } else { column += 1; }
+		offset += 1;
+	}
+	if (line == pos.line && column == pos.column) { return offset; }
+	return null;
+}
+
 
 // Header line plus its terminating line break: the prefix of every binary
 // scroll.

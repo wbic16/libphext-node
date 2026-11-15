@@ -4,7 +4,7 @@ This project is a fork of https://github.com/wbic16/libphext-rs.
 
 It generally lags behind the Rust implementation a bit, but should be very close in terms of functionality.
 
-Current Library Release: v0.6.0
+Current Library Release: v0.6.1
 Port: Complete
 
 Coordinates (since 0.4.0)
